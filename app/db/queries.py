@@ -1,13 +1,10 @@
+
 import asyncio
 import datetime
 from bson import ObjectId
 from .client import db
 
 async def get_user_financial_summary(user_id: str) -> dict:
-    """
-    Fetches a comprehensive financial summary for a given user by concurrently
-    querying all relevant collections in the database.
-    """
     try:
         object_id = ObjectId(user_id)
     except Exception:
@@ -43,21 +40,17 @@ async def get_user_financial_summary(user_id: str) -> dict:
     }
     
     return summary
-
 async def set_conversation_title(user_id: str, conversation_id: str, title: str):
-    """Saves or updates the title for a conversation in a new 'conversations' collection."""
     try:
         await db.conversations.update_one(
             {"conversation_id": conversation_id, "userId": ObjectId(user_id)},
             {"$set": {"title": title}, "$setOnInsert": {"createdAt": datetime.datetime.utcnow()}},
             upsert=True
         )
-        print(f"Title set for conversation {conversation_id}: {title}")
     except Exception as e:
         print(f"DB Error setting conversation title: {e}")
 
 async def save_chat_message(user_id: str, conversation_id: str, role: str, message: str):
-    """Saves a single chat message to the history, including a timestamp."""
     try:
         await db.chat_history.insert_one({
             "userId": ObjectId(user_id),
@@ -70,11 +63,8 @@ async def save_chat_message(user_id: str, conversation_id: str, role: str, messa
         print(f"DB Error saving chat message: {e}")
 
 async def get_conversation_history(conversation_id: str, max_messages: int = 20) -> list:
-    """Fetches the last N messages for a given conversation and translates 'bot' role."""
     history = []
-    cursor = db.chat_history.find(
-        {"conversation_id": conversation_id}
-    ).sort("timestamp", 1).limit(max_messages)
+    cursor = db.chat_history.find({"conversation_id": conversation_id}).sort("timestamp", 1).limit(max_messages)
     docs = await cursor.to_list(length=max_messages)
     for document in docs:
         role = document["role"]
@@ -84,18 +74,14 @@ async def get_conversation_history(conversation_id: str, max_messages: int = 20)
     return history
 
 async def get_user_conversations(user_id: str) -> list:
-    """Fetches all conversation records for a specific user from the 'conversations' collection."""
     try:
-        object_id = ObjectId(user_id)
-        cursor = db.conversations.find({"userId": object_id}).sort("createdAt", -1)
-        conversations = await cursor.to_list(length=None)
-        return conversations
+        cursor = db.conversations.find({"userId": ObjectId(user_id)}).sort("createdAt", -1)
+        return await cursor.to_list(length=None)
     except Exception as e:
         print(f"DB Error fetching user conversations: {e}")
         return []
 
 async def rename_conversation(user_id: str, conversation_id: str, new_title: str) -> bool:
-    """Updates the title of a specific conversation for a specific user."""
     try:
         result = await db.conversations.update_one(
             {"conversation_id": conversation_id, "userId": ObjectId(user_id)},
@@ -107,58 +93,40 @@ async def rename_conversation(user_id: str, conversation_id: str, new_title: str
         return False
 
 async def delete_conversation(user_id: str, conversation_id: str) -> bool:
-    """Deletes a conversation record and all of its associated chat history messages."""
     try:
-        delete_convo_task = db.conversations.delete_one(
-            {"conversation_id": conversation_id, "userId": ObjectId(user_id)}
-        )
-        delete_history_task = db.chat_history.delete_many(
-            {"conversation_id": conversation_id, "userId": ObjectId(user_id)}
-        )
+        delete_convo_task = db.conversations.delete_one({"conversation_id": conversation_id, "userId": ObjectId(user_id)})
+        delete_history_task = db.chat_history.delete_many({"conversation_id": conversation_id, "userId": ObjectId(user_id)})
         results = await asyncio.gather(delete_convo_task, delete_history_task)
         return results[0].deleted_count > 0
     except Exception as e:
         print(f"DB Error deleting conversation: {e}")
         return False
-    
-async def save_suggestions(user_id: str, suggestions: list[dict]):
-    """
-    Saves a list of generated AI suggestions to the database.
-    This will overwrite any previous suggestions for the user.  
-    """
+
+async def save_optimization_report(user_id: str, report_type: str, report_data: dict):
     try:
-        object_id = ObjectId(user_id)
-        await db.suggestions.delete_many({"userId": object_id})
-
-        if suggestions:
-            docs_to_insert = [
-                {
-                    **s,
-                    "userId": object_id,
-                    "createdAt": datetime.datetime.utcnow()
-                } for s in suggestions
-            ]
-            await db.suggestions.insert_many(docs_to_insert)
-            print(f"Successfully saved {len(docs_to_insert)} suggestions for user {user_id}")
-
+        await db.optimization_reports.update_one(
+            {"userId": ObjectId(user_id), "reportType": report_type},
+            {"$set": {
+                "reportData": report_data,
+                "createdAt": datetime.datetime.utcnow()
+            }},
+            upsert=True
+        )
     except Exception as e:
-        print(f"DB Error saving suggestions: {e}")
+        print(f"DB Error saving optimization report: {e}")
 
-async def get_latest_suggestions(user_id: str) -> list:
-    """
-    Fetches the most recent set of AI suggestions for a given user.
-    """
+async def get_latest_optimization_report(user_id: str, report_type: str) -> dict | None:
     try:
-        object_id = ObjectId(user_id)
-        cursor = db.suggestions.find({"userId": object_id}).sort("createdAt", -1)
-        return await cursor.to_list(length=None)
+        report = await db.optimization_reports.find_one({
+            "userId": ObjectId(user_id), 
+            "reportType": report_type
+        }, sort=[("createdAt", -1)])
+        return report.get("reportData") if report else None
     except Exception as e:
-        print(f"DB Error fetching suggestions: {e}")
-        return []
-
+        print(f"DB Error fetching optimization report: {e}")
+        return None
 
 async def get_all_active_users() -> list:
-    """Fetches a list of all non-deleted users for analysis."""
     try:
         cursor = db.users.find({"isDeleted": False})
         return await cursor.to_list(length=None)
@@ -167,7 +135,6 @@ async def get_all_active_users() -> list:
         return []
 
 async def save_admin_alert(user_id: str, user_email: str, alert_message: str, category: str):
-    """Saves a single admin alert to the database."""
     try:
         await db.admin_alerts.insert_one({
             "userId": ObjectId(user_id),
@@ -180,10 +147,9 @@ async def save_admin_alert(user_id: str, user_email: str, alert_message: str, ca
         print(f"DB Error saving admin alert: {e}")
 
 async def get_all_admin_alerts() -> list:
-    """Fetches all generated admin alerts, sorted by most recent."""
     try:
         cursor = db.admin_alerts.find({}).sort("createdAt", -1)
         return await cursor.to_list(length=None)
     except Exception as e:
         print(f"DB Error fetching admin alerts: {e}")
-        return []    
+        return []

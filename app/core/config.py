@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
+    SCHEDULER_API_KEY: str 
 
     class Config:
         env_file = ".env"

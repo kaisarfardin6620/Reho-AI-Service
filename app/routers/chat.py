@@ -1,5 +1,3 @@
-# in app/routers/chat.py
-
 import asyncio
 import uuid
 from typing import List
@@ -15,7 +13,6 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 openai.api_key = settings.OPENAI_API_KEY
 
 async def generate_and_save_title(user_id: str, conversation_id: str, first_message: str, websocket: WebSocket):
-    """A background task to generate, save, and send the conversation title."""
     try:
         title_prompt = prompt_builder.build_title_generation_prompt(first_message)
         response = openai.chat.completions.create(
@@ -87,7 +84,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @router.get("/conversations", response_model=List[ConversationInfo])
 async def list_user_conversations(user_id: str = Depends(get_user_id_from_token)):
-    """Retrieves a list of all past conversations for the authenticated user."""
     conversations = await db_queries.get_user_conversations(user_id)
     return conversations
 
@@ -97,7 +93,6 @@ async def rename_user_conversation(
     request_body: RenameConversationRequest,
     user_id: str = Depends(get_user_id_from_token)
 ):
-    """Renames a specific conversation."""
     success = await db_queries.rename_conversation(
         user_id=user_id,
         conversation_id=conversation_id,
@@ -115,7 +110,6 @@ async def delete_user_conversation(
     conversation_id: str,
     user_id: str = Depends(get_user_id_from_token)
 ):
-    """Deletes a conversation and all of its messages."""
     success = await db_queries.delete_conversation(
         user_id=user_id,
         conversation_id=conversation_id

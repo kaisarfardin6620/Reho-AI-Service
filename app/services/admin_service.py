@@ -8,11 +8,6 @@ from app.core.config import settings
 openai.api_key = settings.OPENAI_API_KEY
 
 async def run_analysis_for_all_users():
-    """
-    The core logic for the admin alert system. This function iterates through
-    all users, analyzes their data, and saves any generated alerts.
-    This is intended to be run as a scheduled background job.
-    """
     print("Starting analysis job for all users...")
     all_users = await db_queries.get_all_active_users()
     
