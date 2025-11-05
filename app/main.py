@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import chat, health, feedback, admin, schedule 
+from app.routers import chat, feedback, admin, schedule 
 
 app = FastAPI(
     title="Financial AI Service",
@@ -7,7 +7,6 @@ app = FastAPI(
 )
 
 app.include_router(chat.router)
-app.include_router(health.router)
 app.include_router(feedback.router)
 app.include_router(admin.router)
 app.include_router(schedule.router)

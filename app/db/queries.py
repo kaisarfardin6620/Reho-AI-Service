@@ -1,4 +1,3 @@
-
 import asyncio
 import datetime
 from bson import ObjectId
@@ -8,9 +7,7 @@ async def get_user_financial_summary(user_id: str) -> dict:
     try:
         object_id = ObjectId(user_id)
     except Exception:
-        print(f"Invalid user_id format provided: {user_id}")
-        return {"name": "there", "error": "Invalid user ID"}
-
+        raise ValueError(f"Invalid user_id format provided: {user_id}")
     user_task = db.users.find_one({"_id": object_id})
     income_task = db.incomes.find({"userId": object_id, "isDeleted": False}).to_list(length=None)
     expense_task = db.expenses.find({"userId": object_id, "isDeleted": False}).to_list(length=None)
@@ -18,17 +15,14 @@ async def get_user_financial_summary(user_id: str) -> dict:
     debt_task = db.debts.find({"userId": object_id, "isDeleted": False}).to_list(length=None)
     saving_goal_task = db.savinggoals.find({"userId": object_id, "isDeleted": False}).to_list(length=None)
     subscription_task = db.subscriptions.find_one({"userId": object_id, "status": "active"})
-
     results = await asyncio.gather(
         user_task, income_task, expense_task, budget_task,
         debt_task, saving_goal_task, subscription_task,
         return_exceptions=True
     )
-
     user, incomes, expenses, budgets, debts, saving_goals, subscription = (
         r for r in results if not isinstance(r, Exception)
     )
-
     summary = {
         "name": user.get("name", "there") if user else "there",
         "incomes": [{"name": i.get("name"), "amount": i.get("amount"), "frequency": i.get("frequency")} for i in incomes],
@@ -38,7 +32,6 @@ async def get_user_financial_summary(user_id: str) -> dict:
         "saving_goals": [{"name": sg.get("name"), "totalAmount": sg.get("totalAmount"), "monthlyTarget": sg.get("monthlyTarget")} for sg in saving_goals],
         "subscription_status": subscription.get("status", "none") if subscription else "none"
     }
-    
     return summary
 async def set_conversation_title(user_id: str, conversation_id: str, title: str):
     try:
@@ -49,7 +42,6 @@ async def set_conversation_title(user_id: str, conversation_id: str, title: str)
         )
     except Exception as e:
         print(f"DB Error setting conversation title: {e}")
-
 async def save_chat_message(user_id: str, conversation_id: str, role: str, message: str):
     try:
         await db.chat_history.insert_one({
@@ -61,7 +53,6 @@ async def save_chat_message(user_id: str, conversation_id: str, role: str, messa
         })
     except Exception as e:
         print(f"DB Error saving chat message: {e}")
-
 async def get_conversation_history(conversation_id: str, max_messages: int = 20) -> list:
     history = []
     cursor = db.chat_history.find({"conversation_id": conversation_id}).sort("timestamp", 1).limit(max_messages)
@@ -72,15 +63,19 @@ async def get_conversation_history(conversation_id: str, max_messages: int = 20)
             role = "assistant"
         history.append({"role": role, "content": document["message"]})
     return history
-
 async def get_user_conversations(user_id: str) -> list:
     try:
         cursor = db.conversations.find({"userId": ObjectId(user_id)}).sort("createdAt", -1)
-        return await cursor.to_list(length=None)
+        conversations = await cursor.to_list(length=None)
+        for convo in conversations:
+            if "_id" in convo:
+                del convo["_id"]
+            if isinstance(convo.get("userId"), ObjectId):
+                convo["userId"] = str(convo["userId"])
+        return conversations
     except Exception as e:
         print(f"DB Error fetching user conversations: {e}")
         return []
-
 async def rename_conversation(user_id: str, conversation_id: str, new_title: str) -> bool:
     try:
         result = await db.conversations.update_one(
@@ -91,7 +86,6 @@ async def rename_conversation(user_id: str, conversation_id: str, new_title: str
     except Exception as e:
         print(f"DB Error renaming conversation: {e}")
         return False
-
 async def delete_conversation(user_id: str, conversation_id: str) -> bool:
     try:
         delete_convo_task = db.conversations.delete_one({"conversation_id": conversation_id, "userId": ObjectId(user_id)})
@@ -101,7 +95,6 @@ async def delete_conversation(user_id: str, conversation_id: str) -> bool:
     except Exception as e:
         print(f"DB Error deleting conversation: {e}")
         return False
-
 async def save_optimization_report(user_id: str, report_type: str, report_data: dict):
     try:
         await db.optimization_reports.update_one(
@@ -114,7 +107,6 @@ async def save_optimization_report(user_id: str, report_type: str, report_data: 
         )
     except Exception as e:
         print(f"DB Error saving optimization report: {e}")
-
 async def get_latest_optimization_report(user_id: str, report_type: str) -> dict | None:
     try:
         report = await db.optimization_reports.find_one({
@@ -125,7 +117,6 @@ async def get_latest_optimization_report(user_id: str, report_type: str) -> dict
     except Exception as e:
         print(f"DB Error fetching optimization report: {e}")
         return None
-
 async def get_all_active_users() -> list:
     try:
         cursor = db.users.find({"isDeleted": False})
@@ -133,7 +124,6 @@ async def get_all_active_users() -> list:
     except Exception as e:
         print(f"DB Error fetching all users: {e}")
         return []
-
 async def save_admin_alert(user_id: str, user_email: str, alert_message: str, category: str):
     try:
         await db.admin_alerts.insert_one({
@@ -146,10 +136,24 @@ async def save_admin_alert(user_id: str, user_email: str, alert_message: str, ca
     except Exception as e:
         print(f"DB Error saving admin alert: {e}")
 
-async def get_all_admin_alerts() -> list:
+async def get_latest_admin_alerts_for_user(user_id: str, limit: int = 5) -> list:
     try:
-        cursor = db.admin_alerts.find({}).sort("createdAt", -1)
-        return await cursor.to_list(length=None)
+        object_id = ObjectId(user_id)
+    except Exception:
+        raise ValueError("Invalid user_id format provided.")
+
+    try:
+        cursor = db.admin_alerts.find({"userId": object_id}).sort("createdAt", -1).limit(limit)
+        alerts = await cursor.to_list(length=limit)
+        
+        for alert in alerts:
+            if isinstance(alert.get("userId"), ObjectId):
+                alert["userId"] = str(alert["userId"])
+            if "_id" in alert:
+                del alert["_id"] 
+
+        return alerts
+        
     except Exception as e:
-        print(f"DB Error fetching admin alerts: {e}")
+        print(f"DB Error fetching latest admin alerts for user {user_id}: {e}")
         return []
