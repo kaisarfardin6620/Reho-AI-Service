@@ -2,7 +2,9 @@ import asyncio
 import datetime
 from bson import ObjectId
 from .client import db
+from app.utils.mongo_metrics import track_mongo_operation
 
+@track_mongo_operation(collection='users', operation='aggregate')
 async def get_user_financial_summary(user_id: str) -> dict:
     try:
         object_id = ObjectId(user_id)
@@ -33,6 +35,7 @@ async def get_user_financial_summary(user_id: str) -> dict:
         "subscription_status": subscription.get("status", "none") if subscription else "none"
     }
     return summary
+@track_mongo_operation(collection='conversations', operation='upsert')
 async def set_conversation_title(user_id: str, conversation_id: str, title: str):
     try:
         await db.conversations.update_one(
@@ -42,6 +45,7 @@ async def set_conversation_title(user_id: str, conversation_id: str, title: str)
         )
     except Exception as e:
         print(f"DB Error setting conversation title: {e}")
+@track_mongo_operation(collection='chat_history', operation='insert')
 async def save_chat_message(user_id: str, conversation_id: str, role: str, message: str):
     try:
         await db.chat_history.insert_one({

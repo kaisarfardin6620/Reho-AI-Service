@@ -8,15 +8,17 @@ from app.ai import prompt_builder
 from app.models.chat import ConversationInfo, RenameConversationRequest
 import openai
 from app.core.config import settings
+from app.utils.metrics import track_openai_metrics, ACTIVE_USERS
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 openai.api_key = settings.OPENAI_API_KEY
 
+@track_openai_metrics()
 async def generate_and_save_title(user_id: str, conversation_id: str, first_message: str, websocket: WebSocket):
     try:
         title_prompt = prompt_builder.build_title_generation_prompt(first_message)
         response = openai.chat.completions.create(
-            model="gpt-3.5-turbo", messages=title_prompt, temperature=0.2
+            model="gpt-4-turbo", messages=title_prompt, temperature=0.2
         )
         title = response.choices[0].message.content.strip()
         await db_queries.set_conversation_title(user_id, conversation_id, title)
@@ -31,18 +33,19 @@ async def websocket_endpoint(websocket: WebSocket):
     token = websocket.query_params.get("token")
     try:
         user_id = verify_token_ws(token)
+        ACTIVE_USERS.inc()
     except ValueError as e:
         await websocket.send_json({"error": f"Authentication failed: {e}"})
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
-        
-    conversation_id = websocket.query_params.get("conversation_id")
-    is_new_conversation = not conversation_id
-
-    financial_summary = await db_queries.get_user_financial_summary(user_id)
-    personalized_system_prompt = prompt_builder.build_contextual_system_prompt(financial_summary)
-
+    
     try:
+        conversation_id = websocket.query_params.get("conversation_id")
+        is_new_conversation = not conversation_id
+
+        financial_summary = await db_queries.get_user_financial_summary(user_id)
+        personalized_system_prompt = prompt_builder.build_contextual_system_prompt(financial_summary)
+
         while True:
             message = await websocket.receive_text()
             
