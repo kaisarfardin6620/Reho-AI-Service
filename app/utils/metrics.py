@@ -1,36 +1,12 @@
-from prometheus_client import Counter, Histogram, Gauge
 from functools import wraps
+from typing import Callable, Set
+import logging
 import time
 
-# Metrics
-REQUEST_COUNT = Counter(
-    'http_requests_total',
-    'Total HTTP requests',
-    ['method', 'endpoint', 'status']
-)
+logger = logging.getLogger(__name__)
 
-REQUEST_LATENCY = Histogram(
-    'http_request_duration_seconds',
-    'HTTP request latency',
-    ['method', 'endpoint']
-)
-
-ACTIVE_USERS = Gauge(
-    'active_users_total',
-    'Number of active users'
-)
-
-OPENAI_API_CALLS = Counter(
-    'openai_api_calls_total',
-    'Total OpenAI API calls',
-    ['endpoint', 'status']
-)
-
-OPENAI_API_LATENCY = Histogram(
-    'openai_api_duration_seconds',
-    'OpenAI API call latency',
-    ['endpoint']
-)
+# Simple in-memory active users tracking
+ACTIVE_USERS: Set[str] = set()
 
 def track_request_metrics():
     async def metrics_middleware(request, call_next):
@@ -40,25 +16,14 @@ def track_request_metrics():
         
         try:
             response = await call_next(request)
-            REQUEST_COUNT.labels(
-                method=method,
-                endpoint=endpoint,
-                status=response.status_code
-            ).inc()
+            logger.info(f"Request: {method} {endpoint} - Status: {response.status_code}")
             return response
         except Exception as e:
-            REQUEST_COUNT.labels(
-                method=method,
-                endpoint=endpoint,
-                status=500
-            ).inc()
+            logger.error(f"Request failed: {method} {endpoint} - Error: {str(e)}")
             raise
         finally:
             duration = time.time() - start_time
-            REQUEST_LATENCY.labels(
-                method=method,
-                endpoint=endpoint
-            ).observe(duration)
+            logger.info(f"Request duration: {duration:.3f}s - {method} {endpoint}")
     
     return metrics_middleware
 
@@ -71,22 +36,24 @@ def track_openai_metrics():
             
             try:
                 result = await func(*args, **kwargs)
-                OPENAI_API_CALLS.labels(
-                    endpoint=endpoint,
-                    status='success'
-                ).inc()
+                logger.info(f"OpenAI API call succeeded: {endpoint}")
                 return result
             except Exception as e:
-                OPENAI_API_CALLS.labels(
-                    endpoint=endpoint,
-                    status='error'
-                ).inc()
+                logger.error(f"OpenAI API call failed: {endpoint} - Error: {str(e)}")
                 raise
             finally:
                 duration = time.time() - start_time
-                OPENAI_API_LATENCY.labels(
-                    endpoint=endpoint
-                ).observe(duration)
+                logger.info(f"OpenAI API call duration: {duration:.3f}s - {endpoint}")
         
         return wrapper
     return decorator
+
+def add_active_user(user_id: str):
+    """Add a user to the active users set"""
+    ACTIVE_USERS.add(user_id)
+    logger.info(f"User {user_id} became active. Total active users: {len(ACTIVE_USERS)}")
+
+def remove_active_user(user_id: str):
+    """Remove a user from the active users set"""
+    ACTIVE_USERS.discard(user_id)
+    logger.info(f"User {user_id} became inactive. Total active users: {len(ACTIVE_USERS)}")

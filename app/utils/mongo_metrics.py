@@ -1,23 +1,8 @@
-from prometheus_client import Counter, Histogram, Summary, Gauge
 from functools import wraps
 import time
+import logging
 
-MONGO_OPERATIONS = Counter(
-    'mongodb_operations_total',
-    'Total MongoDB operations',
-    ['operation', 'collection', 'status']
-)
-
-MONGO_OPERATION_LATENCY = Histogram(
-    'mongodb_operation_duration_seconds',
-    'MongoDB operation latency',
-    ['operation', 'collection']
-)
-
-MONGO_CONNECTIONS = Gauge(
-    'mongodb_connections',
-    'Number of active MongoDB connections'
-)
+logger = logging.getLogger(__name__)
 
 def track_mongo_operation(collection: str, operation: str):
     def decorator(func):
@@ -26,24 +11,28 @@ def track_mongo_operation(collection: str, operation: str):
             start_time = time.time()
             try:
                 result = await func(*args, **kwargs)
-                MONGO_OPERATIONS.labels(
-                    operation=operation,
-                    collection=collection,
-                    status='success'
-                ).inc()
+                logger.info(f"MongoDB operation success: {operation} on {collection}")
                 return result
             except Exception as e:
-                MONGO_OPERATIONS.labels(
-                    operation=operation,
-                    collection=collection,
-                    status='error'
-                ).inc()
+                logger.error(f"MongoDB operation failed: {operation} on {collection} - Error: {str(e)}")
                 raise
             finally:
                 duration = time.time() - start_time
-                MONGO_OPERATION_LATENCY.labels(
-                    operation=operation,
-                    collection=collection
-                ).observe(duration)
+                logger.info(f"MongoDB operation duration: {duration:.3f}s - {operation} on {collection}")
         return wrapper
     return decorator
+
+_connection_count = 0
+
+def increment_connections():
+    global _connection_count
+    _connection_count += 1
+    logger.info(f"MongoDB connections: {_connection_count}")
+
+def decrement_connections():
+    global _connection_count
+    _connection_count = max(0, _connection_count - 1)
+    logger.info(f"MongoDB connections: {_connection_count}")
+
+def get_connection_count():
+    return _connection_count

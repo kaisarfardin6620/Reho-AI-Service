@@ -1,43 +1,31 @@
 ## Running the Project with Docker
 
-This project includes a Docker setup for streamlined development and deployment. The provided `Dockerfile` uses **Python 3.11-slim** and installs all dependencies in a virtual environment. The recommended way to build and run the application is via Docker Compose.
+This project provides a Docker setup for local development and deployment. The application runs on Python 3.11 (as specified in the Dockerfile) and uses MongoDB as its database backend.
 
 ### Requirements
-- Docker (latest version recommended)
-- Docker Compose (v2 or higher)
-
-### Environment Variables
-- The application supports environment variables via a `.env` file. If you have project-specific settings, create a `.env` file in the project root. Uncomment the `env_file` line in `docker-compose.yml` to enable this.
+- Docker and Docker Compose installed on your system
+- (Optional) `.env` file in the project root for environment variables
 
 ### Build and Run Instructions
-1. **Build and start the application:**
 
-   ```sh
+1. **Clone the repository and navigate to the project root.**
+2. **(Optional) Create a `.env` file** if you need to set environment variables for the application or MongoDB. Refer to the commented sections in `docker-compose.yml` for possible variables.
+3. **Build and start the services:**
+
+   ```bash
    docker compose up --build
    ```
 
-   This will build the image and start the `python-app` service.
+   This will build the Python application image and start both the app and MongoDB containers.
 
-2. **Stopping the application:**
-
-   ```sh
-   docker compose down
-   ```
+### Service Details
+- **python-app**: Runs the main application using Python 3.11 in a virtual environment. No ports are exposed by default; update `docker-compose.yml` if you need to expose application endpoints.
+- **mongo**: Uses the official `mongo:latest` image. Data is persisted in the `mongo-data` volume. No ports are exposed by default; add a `ports:` section in `docker-compose.yml` if you need external access.
 
 ### Configuration Notes
 - The application runs as a non-root user for improved security.
-- All Python dependencies are installed in an isolated virtual environment inside the container.
-- If your application exposes a web server, map the appropriate ports in the `ports` section of `docker-compose.yml`. By default, no ports are published. Uncomment and adjust as needed:
+- MongoDB healthchecks are enabled for container reliability.
+- All services are connected via the `backend` Docker network.
+- If you need to set MongoDB credentials, uncomment and edit the `environment:` section under the `mongo` service in `docker-compose.yml`.
 
-   ```yaml
-   ports:
-     - "8000:8000"  # Replace with your app's port if necessary
-   ```
-
-- The `.dockerignore` file should be configured to exclude files like `.env`, `.git`, and other development artifacts from the build context.
-
-### Service Overview
-- **python-app**: Main application service, built from the provided `Dockerfile`.
-- **Network**: All services are attached to the `app-net` bridge network.
-
-For any additional configuration, refer to the comments in the `docker-compose.yml` and `Dockerfile`.
+For further customization, review the `Dockerfile` and `docker-compose.yml` files in the project root.

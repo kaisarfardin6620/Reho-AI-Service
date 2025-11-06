@@ -3,12 +3,14 @@ import datetime
 from bson import ObjectId
 from .client import db
 from app.utils.mongo_metrics import track_mongo_operation
+from loguru import logger
 
 @track_mongo_operation(collection='users', operation='aggregate')
 async def get_user_financial_summary(user_id: str) -> dict:
     try:
         object_id = ObjectId(user_id)
     except Exception:
+        logger.error(f"Invalid user_id format provided: {user_id}") 
         raise ValueError(f"Invalid user_id format provided: {user_id}")
     user_task = db.users.find_one({"_id": object_id})
     income_task = db.incomes.find({"userId": object_id, "isDeleted": False}).to_list(length=None)
@@ -44,8 +46,7 @@ async def set_conversation_title(user_id: str, conversation_id: str, title: str)
             upsert=True
         )
     except Exception as e:
-        print(f"DB Error setting conversation title: {e}")
-@track_mongo_operation(collection='chat_history', operation='insert')
+        logger.exception(f"DB Error setting conversation title: {e}")
 async def save_chat_message(user_id: str, conversation_id: str, role: str, message: str):
     try:
         await db.chat_history.insert_one({
@@ -56,7 +57,7 @@ async def save_chat_message(user_id: str, conversation_id: str, role: str, messa
             "timestamp": datetime.datetime.utcnow()
         })
     except Exception as e:
-        print(f"DB Error saving chat message: {e}")
+        logger.exception(f"DB Error saving chat message: {e}")
 async def get_conversation_history(conversation_id: str, max_messages: int = 20) -> list:
     history = []
     cursor = db.chat_history.find({"conversation_id": conversation_id}).sort("timestamp", 1).limit(max_messages)
@@ -78,7 +79,7 @@ async def get_user_conversations(user_id: str) -> list:
                 convo["userId"] = str(convo["userId"])
         return conversations
     except Exception as e:
-        print(f"DB Error fetching user conversations: {e}")
+        logger.exception(f"DB Error fetching user conversations: {e}")
         return []
 async def rename_conversation(user_id: str, conversation_id: str, new_title: str) -> bool:
     try:
@@ -88,7 +89,7 @@ async def rename_conversation(user_id: str, conversation_id: str, new_title: str
         )
         return result.modified_count > 0
     except Exception as e:
-        print(f"DB Error renaming conversation: {e}")
+        logger.exception(f"DB Error renaming conversation: {e}")
         return False
 async def delete_conversation(user_id: str, conversation_id: str) -> bool:
     try:
@@ -97,7 +98,7 @@ async def delete_conversation(user_id: str, conversation_id: str) -> bool:
         results = await asyncio.gather(delete_convo_task, delete_history_task)
         return results[0].deleted_count > 0
     except Exception as e:
-        print(f"DB Error deleting conversation: {e}")
+        logger.exception(f"DB Error deleting conversation: {e}")
         return False
 async def save_optimization_report(user_id: str, report_type: str, report_data: dict):
     try:
@@ -110,7 +111,7 @@ async def save_optimization_report(user_id: str, report_type: str, report_data: 
             upsert=True
         )
     except Exception as e:
-        print(f"DB Error saving optimization report: {e}")
+        logger.exception(f"DB Error saving optimization report: {e}")
 async def get_latest_optimization_report(user_id: str, report_type: str) -> dict | None:
     try:
         report = await db.optimization_reports.find_one({
@@ -119,14 +120,14 @@ async def get_latest_optimization_report(user_id: str, report_type: str) -> dict
         }, sort=[("createdAt", -1)])
         return report.get("reportData") if report else None
     except Exception as e:
-        print(f"DB Error fetching optimization report: {e}")
+        logger.exception(f"DB Error fetching optimization report: {e}")
         return None
 async def get_all_active_users() -> list:
     try:
         cursor = db.users.find({"isDeleted": False})
         return await cursor.to_list(length=None)
     except Exception as e:
-        print(f"DB Error fetching all users: {e}")
+        logger.exception(f"DB Error fetching all users: {e}")
         return []
 async def save_admin_alert(user_id: str, user_email: str, alert_message: str, category: str):
     try:
@@ -138,7 +139,7 @@ async def save_admin_alert(user_id: str, user_email: str, alert_message: str, ca
             "createdAt": datetime.datetime.utcnow()
         })
     except Exception as e:
-        print(f"DB Error saving admin alert: {e}")
+        logger.exception(f"DB Error saving admin alert: {e}")
 
 async def get_latest_admin_alerts_for_user(user_id: str, limit: int = 5) -> list:
     try:
@@ -159,5 +160,5 @@ async def get_latest_admin_alerts_for_user(user_id: str, limit: int = 5) -> list
         return alerts
         
     except Exception as e:
-        print(f"DB Error fetching latest admin alerts for user {user_id}: {e}")
+        logger.exception(f"DB Error fetching latest admin alerts for user {user_id}: {e}")
         return []

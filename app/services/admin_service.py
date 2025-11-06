@@ -6,17 +6,33 @@ from app.models.admin import AdminUserAIDashboard, DebtStatusItem, SpendingHeatm
 from app.models.feedback import OptimizationInsight
 import openai
 from app.core.config import settings
+from loguru import logger
+from app.utils.retry import retry_openai
+from app.utils.metrics import track_openai_metrics
 
 openai.api_key = settings.OPENAI_API_KEY
 
+
+@retry_openai(max_retries=3)
+@track_openai_metrics()
+async def _run_anomaly_detection_ai(financial_summary: dict):
+    anomaly_prompt = prompt_builder.build_anomaly_detection_prompt(financial_summary)
+    response = openai.chat.completions.create(
+        model="gpt-4-turbo",
+        messages=anomaly_prompt,
+        response_format={"type": "json_object"}
+    )
+    return json.loads(response.choices[0].message.content)
+
+
 async def run_analysis_for_all_users():
-    print("Starting analysis job for all users...")
+    logger.info("Starting analysis job for all users...")
     all_users = await db_queries.get_all_active_users()
     
     for user in all_users:
         user_id = str(user["_id"])
         user_email = user.get("email", "N/A")
-        print(f"Analyzing data for user: {user_email} ({user_id})")
+        logger.info(f"Analyzing data for user: {user_email} ({user_id})")
 
         try:
             financial_summary = await db_queries.get_user_financial_summary(user_id)
@@ -24,16 +40,8 @@ async def run_analysis_for_all_users():
             if not financial_summary.get("incomes") and not financial_summary.get("expenses"):
                 continue
 
-            anomaly_prompt = prompt_builder.build_anomaly_detection_prompt(financial_summary)
+            alert_data = await _run_anomaly_detection_ai(financial_summary)
             
-            response = openai.chat.completions.create(
-                model="gpt-4-turbo",
-                messages=anomaly_prompt,
-                response_format={"type": "json_object"}
-            )
-            
-            alert_data = json.loads(response.choices[0].message.content)
-
             if alert_data and "alertMessage" in alert_data:
                 await db_queries.save_admin_alert(
                     user_id=user_id,
@@ -41,15 +49,15 @@ async def run_analysis_for_all_users():
                     alert_message=alert_data["alertMessage"],
                     category=alert_data["category"]
                 )
-                print(f"!!! Alert generated for user {user_email}: {alert_data['alertMessage']}")
+                logger.warning(f"!!! Alert generated for user {user_email}: {alert_data['alertMessage']}")
             
             await asyncio.sleep(1)
 
         except Exception as e:
-            print(f"Error processing user {user_id}: {e}")
+            logger.exception(f"Error processing user {user_id}: {e}")
             continue 
     
-    print("Finished analysis job for all users.")
+    logger.info("Finished analysis job for all users.")
 
 
 async def get_single_user_admin_dashboard(user_id: str) -> AdminUserAIDashboard:
@@ -71,7 +79,7 @@ async def get_single_user_admin_dashboard(user_id: str) -> AdminUserAIDashboard:
                 try:
                     all_ai_tips.append(OptimizationInsight(**insight_data))
                 except Exception as e:
-                    print(f"Error validating insight data: {e}")
+                    logger.error(f"Error validating insight data: {e}")
 
     debt_statuses = []
     if financial_summary.get("debts"):

@@ -21,7 +21,7 @@ def retry_openai(max_retries: int = 3, initial_delay: float = 1):
                     if attempt == max_retries - 1:
                         raise
                     
-                    wait_time = delay * (2 ** attempt)  # exponential backoff
+                    wait_time = delay * (2 ** attempt)
                     logger.warning(f"OpenAI API call failed. Retrying in {wait_time}s. Error: {str(e)}")
                     await asyncio.sleep(wait_time)
                 except APIError as e:

@@ -8,23 +8,37 @@ from app.ai import prompt_builder
 from app.models.chat import ConversationInfo, RenameConversationRequest
 import openai
 from app.core.config import settings
-from app.utils.metrics import track_openai_metrics, ACTIVE_USERS
+from loguru import logger
+from app.utils.retry import retry_openai
+from app.utils.metrics import track_openai_metrics, ACTIVE_USERS, add_active_user, remove_active_user
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 openai.api_key = settings.OPENAI_API_KEY
 
+@retry_openai(max_retries=3)
 @track_openai_metrics()
 async def generate_and_save_title(user_id: str, conversation_id: str, first_message: str, websocket: WebSocket):
     try:
         title_prompt = prompt_builder.build_title_generation_prompt(first_message)
         response = openai.chat.completions.create(
-            model="gpt-4-turbo", messages=title_prompt, temperature=0.2
+            model="gpt-3.5-turbo", messages=title_prompt, temperature=0.2
         )
         title = response.choices[0].message.content.strip()
         await db_queries.set_conversation_title(user_id, conversation_id, title)
         await websocket.send_json({"type": "title", "data": title})
     except Exception as e:
-        print(f"Error generating title: {e}")
+        logger.exception(f"Error generating title for user {user_id}: {e}")
+
+@retry_openai(max_retries=3)
+@track_openai_metrics()
+async def stream_openai_response(messages_for_api: list):
+    """Handles the retriable streaming call to OpenAI."""
+    return openai.chat.completions.create(
+        model="gpt-4", 
+        messages=messages_for_api, 
+        stream=True
+    )
+
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -33,8 +47,9 @@ async def websocket_endpoint(websocket: WebSocket):
     token = websocket.query_params.get("token")
     try:
         user_id = verify_token_ws(token)
-        ACTIVE_USERS.inc()
+        add_active_user(user_id)
     except ValueError as e:
+        logger.error(f"WebSocket Authentication failed: {e}")
         await websocket.send_json({"error": f"Authentication failed: {e}"})
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -43,7 +58,7 @@ async def websocket_endpoint(websocket: WebSocket):
         conversation_id = websocket.query_params.get("conversation_id")
         is_new_conversation = not conversation_id
 
-        financial_summary = await db_queries.get_user_financial_summary(user_id)
+        financial_summary = await db_queries.get_user_financial_summary(user_id) 
         personalized_system_prompt = prompt_builder.build_contextual_system_prompt(financial_summary)
 
         while True:
@@ -60,9 +75,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             messages_for_api = [{"role": "system", "content": personalized_system_prompt}, *history]
             
-            stream = openai.chat.completions.create(
-                model="gpt-4", messages=messages_for_api, stream=True
-            )
+            stream = await stream_openai_response(messages_for_api) 
             
             full_reply = ""
             for chunk in stream:
@@ -79,9 +92,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 )
 
     except WebSocketDisconnect:
-        print(f"Client disconnected: {user_id}")
+        logger.info(f"Client disconnected: {user_id}")
+        remove_active_user(user_id)
     except Exception as e:
-        print(f"An unexpected error occurred for user {user_id}: {e}")
+        logger.exception(f"An unexpected error occurred for user {user_id}: {e}")
+        remove_active_user(user_id)
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
 
 
