@@ -3,7 +3,7 @@ services:
   api:
     build:
       context: .
-    container_name: python-app # Keeping your desired container name for now
+    container_name: reho-ai-service-api-v2 # Keeping your desired container name for now
     restart: always # Changed from 'unless-stopped' to 'always' for production
     init: true
     
