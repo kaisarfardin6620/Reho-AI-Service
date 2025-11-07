@@ -1,0 +1,20 @@
+services:
+  # 1. FastAPI Microservice (renamed to 'api' for clarity, though 'python-app' works too)
+  api:
+    build:
+      context: .
+    container_name: python-app # Keeping your desired container name for now
+    restart: always # Changed from 'unless-stopped' to 'always' for production
+    init: true
+    
+    # FIX 1: Uncommented and corrected env_file to load secrets into the container
+    env_file:
+      - ./.env 
+      
+    # FIX 2: Uncommented and corrected ports to expose your service
+    ports:
+      - "8070:8000" 
+      
+    # NOTE: The 'command' is defined in the Dockerfile and should not be duplicated here
+    
+# NOTE: Removed the unused 'mongo' service template and 'volumes' as per your requirements.

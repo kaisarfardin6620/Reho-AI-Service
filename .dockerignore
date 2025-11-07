@@ -1,0 +1,76 @@
+# Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Version control
+.git/
+.gitignore
+
+# Environment and secrets
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.crt
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build and distribution outputs
+dist/
+build/
+out/
+
+# Test and debug artifacts
+test/
+tests/
+debug/
+*.log
+
+# Documentation
+README*
+*.md
+docs/
+
+# Temporary and local files
+tmp/
+temp/
+*.tmp
+.local/
+local/
+
+# Project-specific: skip Docker files (if not needed in build context)
+Dockerfile*
+docker-compose*
+
+# Node.js (not detected, but included for completeness)
+node_modules/
+npm-debug.log
+yarn-debug.log
+
+# Go (not detected, but included for completeness)
+/vendor/
+*.test
+.go-cache/
+
+# Java (not detected, but included for completeness)
+target/
+*.class
+.gradle/
+
+# SVN/Mercurial
+.svn/
+.hg/

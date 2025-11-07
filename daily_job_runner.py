@@ -4,12 +4,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8080") 
+API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8070") 
 
-SECRET_TOKEN = os.getenv(
-    "SCHEDULER_API_KEY", 
-    "f1c5d9a0e6b3g4h2i8j7k0l9m4n2o1p5q8r3s6t9u0v1w2x3y4z7"
-) 
+SECRET_TOKEN = os.getenv("SCHEDULER_API_KEY")
 
 def run_daily_jobs():
     
