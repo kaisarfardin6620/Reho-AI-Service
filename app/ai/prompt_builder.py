@@ -222,3 +222,29 @@ def build_anomaly_detection_prompt(financial_summary: dict) -> list:
     """
     
     return [{"role": "user", "content": prompt}]
+
+
+def build_peer_comparison_prompt(financial_summary: dict) -> list:
+    """
+    Creates a prompt for the AI to generate a plausible peer comparison statement.
+    """
+    user_name = financial_summary.get('name', 'there')
+    summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
+
+    prompt = f"""
+    You are an expert financial analyst. Your task is to generate a single, plausible Peer Comparison statement for a user named {user_name} based on their financial summary.
+
+    **User's Financial Data:**
+    {summary_text}
+
+    **Instructions:**
+    1.  Analyze their spending and income patterns, focusing on common discretionary categories like 'shopping', 'entertainment', or 'food'.
+    2.  Generate a statement that compares the user's behavior to their 'age/income group'. This comparison should be a single, engaging sentence.
+    3.  The statement should include a specific category and a plausible percentage (e.g., "User spends 15% more on entertainment...", or "User spends 5% less on housing...").
+    4.  Format your response as a simple JSON object:
+        {{"comparison": "Your single peer comparison sentence goes here."}}
+
+    Now, generate the JSON response.
+    """
+
+    return [{"role": "user", "content": prompt}]

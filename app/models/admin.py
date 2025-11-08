@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from app.models.feedback import OptimizationInsight 
 
 class AdminAlert(BaseModel):
@@ -27,13 +27,17 @@ class SpendingHeatmapItem(BaseModel):
         populate_by_name = True
         by_alias = True
 
-class DebtStatusItem(BaseModel):
-    name: str
-    status: str = Field(..., description="E.g., On Track, Missed Payment, High Risk")
-
-    class Config: 
+class InstallmentLoanInfo(BaseModel):
+    missed_installments: int = Field(..., alias="missedInstallments", description="Count of missed payments.")
+    next_due_date: str = Field(..., alias="nextDueDate", description="Date of the next nearest payment.")
+    status: str = Field(..., description="Overall risk status: Low Risk, Medium Risk, or High Risk.")
+    
+    class Config:
         populate_by_name = True
         by_alias = True
+
+class PeerComparison(BaseModel):
+    comparison: str
 
 class AdminUserAIDashboard(BaseModel):
     total_monthly_spending: float = Field(..., alias="totalMonthlySpending")
@@ -45,7 +49,9 @@ class AdminUserAIDashboard(BaseModel):
     current_alerts: List[AdminAlert] = Field(..., alias="currentAlerts")
     ai_tips: List[OptimizationInsight] = Field(..., alias="aiTips")
 
-    debt_statuses: List[DebtStatusItem] = Field(..., alias="debtStatuses")
+    debt_statuses: InstallmentLoanInfo = Field(..., alias="debtStatuses")
+    
+    peer_comparison: PeerComparison = Field(..., alias="peerComparison")
     
     class Config:
         populate_by_name = True
