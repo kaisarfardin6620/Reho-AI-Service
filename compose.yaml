@@ -1,20 +1,30 @@
 services:
-  # 1. FastAPI Microservice (renamed to 'api' for clarity, though 'python-app' works too)
   api:
     build:
       context: .
-    container_name: reho-ai-service-api-v2 # Keeping your desired container name for now
-    restart: always # Changed from 'unless-stopped' to 'always' for production
+    container_name: reho-ai-service-api-v2
+    restart: always 
     init: true
     
-    # FIX 1: Uncommented and corrected env_file to load secrets into the container
     env_file:
       - ./.env 
       
-    # FIX 2: Uncommented and corrected ports to expose your service
     ports:
       - "8070:8000" 
       
-    # NOTE: The 'command' is defined in the Dockerfile and should not be duplicated here
+    depends_on:
+      - redis
+      
+    command: ["/app/.venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     
-# NOTE: Removed the unused 'mongo' service template and 'volumes' as per your requirements.
+  redis:
+    image: redis:7.0-alpine
+    container_name: redis_cache
+    restart: always
+    expose:
+      - 6379 
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

@@ -25,7 +25,7 @@ async def _get_report_from_ai_and_save(user_id: str, report_type: str, prompt_bu
         optimization_prompt = prompt_builder_func(financial_summary)
 
         response = openai.chat.completions.create(
-            model="gpt-4-turbo",
+            model="gpt-4o",
             messages=optimization_prompt,
             response_format={"type": "json_object"} 
         )

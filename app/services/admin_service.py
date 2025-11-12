@@ -19,7 +19,7 @@ openai.api_key = settings.OPENAI_API_KEY
 async def _run_anomaly_detection_ai(financial_summary: dict):
     anomaly_prompt = prompt_builder.build_anomaly_detection_prompt(financial_summary)
     response = openai.chat.completions.create(
-        model="gpt-4-turbo",
+        model="gpt-4o",
         messages=anomaly_prompt,
         response_format={"type": "json_object"}
     )
@@ -31,7 +31,7 @@ async def _run_peer_comparison_ai(financial_summary: dict) -> PeerComparison:
     try:
         comparison_prompt = prompt_builder.build_peer_comparison_prompt(financial_summary)
         response = openai.chat.completions.create(
-            model="gpt-4-turbo",
+            model="gpt-4o",
             messages=comparison_prompt,
             response_format={"type": "json_object"}
         )
