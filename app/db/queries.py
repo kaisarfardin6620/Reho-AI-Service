@@ -65,7 +65,7 @@ async def get_conversation_history(conversation_id: str, max_messages: int = 20)
     history = []
     MAX_HISTORY_LIMIT = 1000
     cursor = db.chat_history.find({"conversation_id": conversation_id}).sort("timestamp", 1).limit(MAX_HISTORY_LIMIT)
-    docs = await cursor.to_list(length=max_messages)
+    docs = await cursor.to_list(length=MAX_HISTORY_LIMIT)
     for document in docs:
         role = document["role"]
         if role == "bot":
