@@ -63,7 +63,8 @@ async def save_chat_message(user_id: str, conversation_id: str, role: str, messa
         logger.exception(f"DB Error saving chat message: {e}")
 async def get_conversation_history(conversation_id: str, max_messages: int = 20) -> list:
     history = []
-    cursor = db.chat_history.find({"conversation_id": conversation_id}).sort("timestamp", 1).limit(max_messages)
+    MAX_HISTORY_LIMIT = 1000
+    cursor = db.chat_history.find({"conversation_id": conversation_id}).sort("timestamp", 1).limit(MAX_HISTORY_LIMIT)
     docs = await cursor.to_list(length=max_messages)
     for document in docs:
         role = document["role"]
