@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import List
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from app.utils.security import verify_token_ws
@@ -52,8 +53,16 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_json({"type": "initial_history", "data": initial_history})
 
         while True:
-            user_message = await websocket.receive_text()
-            if not user_message.strip():
+            raw_data = await websocket.receive_text()
+            
+            try:
+                user_data = json.loads(raw_data) 
+                user_message = user_data.get("message", "").strip() 
+            except json.JSONDecodeError:
+                logger.warning(f"Received non-JSON message from client: {raw_data}")
+                user_message = raw_data.strip()
+            
+            if not user_message:
                 continue
 
             await db_queries.save_chat_message(user_id, conversation_id, "user", user_message)
