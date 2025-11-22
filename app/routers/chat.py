@@ -43,14 +43,24 @@ async def websocket_endpoint(websocket: WebSocket):
     conversation_id = f"fixed_convo_{user_id}"
 
     try:
+        financial_summary = await db_queries.get_user_financial_summary(user_id) 
+        
         initial_history = await db_queries.get_conversation_history(conversation_id)
-        financial_summary = await db_queries.get_user_financial_summary(user_id)
-        personalized_system_prompt = prompt_builder.build_contextual_system_prompt(financial_summary)
-
-        messages_for_api = [{"role": "system", "content": personalized_system_prompt}, *initial_history]
 
         if initial_history:
             await websocket.send_json({"type": "initial_history", "data": initial_history})
+            
+        else:
+            user_name = financial_summary.get('name', 'there')
+            welcome_message = f"Hello {user_name}! I'm Reho, your personal AI financial assistant. I see you're new here! You can start by asking me to analyze your financial condition or ask for tips to save money. How can I help you today? 😊"
+            
+            await websocket.send_json({"type": "full_response", "data": welcome_message})
+            
+            await db_queries.save_chat_message(user_id, conversation_id, "assistant", welcome_message)
+            
+            initial_history = [{"role": "assistant", "content": welcome_message}]
+        personalized_system_prompt = prompt_builder.build_contextual_system_prompt(financial_summary)
+        messages_for_api = [{"role": "system", "content": personalized_system_prompt}, *initial_history]
 
         while True:
             raw_data = await websocket.receive_text()
@@ -64,18 +74,12 @@ async def websocket_endpoint(websocket: WebSocket):
             
             if not user_message:
                 continue
-
             await db_queries.save_chat_message(user_id, conversation_id, "user", user_message)
-
             messages_for_api.append({"role": "user", "content": user_message})
-
             full_reply = await get_openai_full_response(messages_for_api)
-
             await websocket.send_json({"type": "full_response", "data": full_reply})
             await websocket.send_json({"type": "status", "data": "done"})
-
             await db_queries.save_chat_message(user_id, conversation_id, "assistant", full_reply)
-
             messages_for_api.append({"role": "assistant", "content": full_reply})
 
     except WebSocketDisconnect:
