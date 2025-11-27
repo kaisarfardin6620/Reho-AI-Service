@@ -1,3 +1,4 @@
+import json
 BASE_SYSTEM_PROMPT = """
 You are Reho, a friendly, knowledgeable, and encouraging AI financial assistant for a personal finance application.
 
@@ -251,4 +252,36 @@ def build_peer_comparison_prompt(financial_summary: dict) -> list:
     Now, generate the JSON response.
     """
 
+    return [{"role": "user", "content": prompt}]
+
+def build_savings_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
+    """
+    Creates a prompt for the AI to generate a single, contextual financial tip 
+    based on the user's current situation and a new savings calculation.
+    """
+    user_name = financial_summary.get('name', 'there')
+    summary_text = json.dumps(financial_summary) 
+    calc_text = json.dumps(calculator_data)     
+
+    prompt = f"""
+    You are Reho, an AI financial coach. A user named {user_name} has just run a SAVINGS CALCULATOR.
+
+    **User's Current Financial Context (Use this for relevance):**
+    {summary_text}
+
+    **User's New Calculation Inputs:**
+    {calc_text}
+    
+    **CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip for the user.
+    
+    - The tip should connect the calculator's goal to their existing financial data.
+    - Example: If the 'Amount' is high, suggest they check their high-interest 'Debts' first.
+    - Example: If the 'Return Rate' is low, suggest they aim higher based on their 'Income'.
+    
+    Format your response as a simple JSON object:
+    {{"tip": "Your single, concise, and personalized financial tip goes here."}}
+    
+    Now, generate the JSON response.
+    """
+    
     return [{"role": "user", "content": prompt}]
