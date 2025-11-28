@@ -144,3 +144,28 @@ async def get_latest_admin_alerts_for_user(user_id: str, limit: int = 5) -> list
     except Exception as e:
         logger.exception(f"DB Error fetching latest admin alerts for user {user_id}: {e}")
         return []
+
+# --- NEW FUNCTIONS FOR SAVINGS TIP ---
+
+async def save_savings_tip(user_id: str, tip_text: str):
+    """Saves the pre-calculated daily savings tip."""
+    try:
+        await db.savings_tips.update_one(
+            {"userId": ObjectId(user_id)},
+            {"$set": {
+                "tipText": tip_text,
+                "createdAt": datetime.datetime.utcnow()
+            }},
+            upsert=True
+        )
+    except Exception as e:
+        logger.exception(f"DB Error saving savings tip: {e}")
+
+async def get_latest_savings_tip(user_id: str) -> str | None:
+    """Fetches the latest pre-calculated savings tip."""
+    try:
+        tip = await db.savings_tips.find_one({"userId": ObjectId(user_id)})
+        return tip.get("tipText") if tip else None
+    except Exception as e:
+        logger.exception(f"DB Error fetching savings tip: {e}")
+        return None
