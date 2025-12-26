@@ -108,34 +108,49 @@ def build_expense_optimization_prompt(financial_summary: dict) -> list:
     return [{"role": "user", "content": prompt}]
 
 
-def build_budget_optimization_prompt(financial_summary: dict) -> list:
+def build_budget_optimization_prompt(analysis_data: dict) -> list:
     """
     Creates a detailed prompt for the AI to analyze a user's spending
-    against their defined budgets and provide optimization advice.
+    against their budgets AND the 50/30/20 rule, then provide optimization advice.
+    The input is now the comprehensive analysis_data dictionary.
     """
-    user_name = financial_summary.get('name', 'there')
-    summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
+    user_name = analysis_data.get('name', 'there')
+    summary_text = json.dumps(analysis_data.get('financial_summary', {}))
+    
+    analysis_breakdown = f"""
+    --- 50/30/20 Budget Rule Analysis ---
+    Total Income: £{analysis_data.get('total_income', 0.00):.2f}
+    Total Commitments: £{analysis_data.get('total_commitments', 0.00):.2f}
+    
+    - Essential (50% Target): ACTUAL £{analysis_data.get('actual_essential', 0.00):.2f} ({analysis_data.get('percent_essential', 0.00):.2f}%)
+    - Discretionary (30% Target): ACTUAL £{analysis_data.get('actual_discretionary', 0.00):.2f} ({analysis_data.get('percent_discretionary', 0.00):.2f}%)
+    - Savings/Debt Payoff (20% Target): ACTUAL £{analysis_data.get('actual_savings', 0.00):.2f} ({analysis_data.get('percent_savings', 0.00):.2f}%)
+    """
 
     prompt = f"""
-    You are an expert financial analyst named Reho. Your task is to conduct a detailed analysis of the budgets for a user named {user_name} and provide a structured optimization report.
+    You are an expert financial analyst named Reho, specializing in the 50/30/20 budget rule. Your task is to provide a structured optimization report.
 
-    **User's Financial Data:**
+    **User's Financial Data (Full Context):**
     {summary_text}
+    
+    **CRITICAL ANALYSIS DATA:**
+    {analysis_breakdown}
 
     **Instructions:**
-    1.  **Analyze Budget vs. Actuals:** Compare the user's spending in each category directly against their budget for that category. Identify where they are over-budget, under-budget, or on-track. Also, analyze their income vs. total budget and expenses.
-    2.  **Generate a High-Level Summary:** Write a 1-2 sentence summary of their overall budget adherence.
-    3.  **Provide Actionable Insights:** Generate 3 to 5 specific, actionable insights. Each insight must include:
-        - `insight`: A clear observation about their budgeting (e.g., "Spending on 'Groceries' is 20% over budget.").
-        - `suggestion`: A concrete step the user can take (e.g., "Try meal planning to reduce grocery costs.").
-        - `category`: The relevant budget category (e.g., "Groceries", "Entertainment").
-    4.  **Format Your Response as a VALID JSON object.** The JSON must match this exact structure:
+    1.  **Analyze 50/30/20:** Use the Critical Analysis Data to assess if the user is over or under the 50/30/20 targets. Identify the largest discrepancy.
+    2.  **Analyze Budget vs. Actuals:** Also consider their manually defined budgets and expenses.
+    3.  **Generate a High-Level Summary:** Write a 1-2 sentence summary of their overall budget health and 50/30/20 adherence.
+    4.  **Provide Actionable Insights:** Generate 3 to 5 specific, actionable insights. Each insight must include:
+        - `insight`: A clear observation (e.g., "Spending exceeds 50% Essential target by 5%").
+        - `suggestion`: A concrete step to reallocate funds to hit the 50/30/20 goal.
+        - `category`: The relevant category (e.g., "Essential", "Discretionary").
+    5.  **Format Your Response as a VALID JSON object.** The JSON must match this exact structure:
         {{
-            "summary": "Your main finding about their budget adherence.",
+            "summary": "Your main finding goes here, referencing the 50/30/20 rule.",
             "insights": [
                 {{
-                    "insight": "Observation about budget vs. spending.",
-                    "suggestion": "A concrete action the user can take.",
+                    "insight": "Observation about 50/30/20 or a budget vs. actual discrepancy.",
+                    "suggestion": "A concrete action the user can take to balance their budget.",
                     "category": "Budget Category"
                 }}
             ]
