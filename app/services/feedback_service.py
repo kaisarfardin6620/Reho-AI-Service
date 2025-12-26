@@ -42,7 +42,6 @@ async def _get_report_from_ai_and_save(user_id: str, report_type: str, prompt_bu
 
 
 def _map_to_50_30_20(financial_summary: dict) -> dict:
-    
     total_income = sum(i.get("amount", 0) for i in financial_summary.get("incomes", []))
     
     actual_essential = 0.0
@@ -120,32 +119,36 @@ async def generate_optimization_reports_for_all_users():
 
 @retry_openai(max_retries=3)
 @track_openai_metrics()
-async def _get_and_save_savings_tip_for_one_user(user_id: str) -> bool:
-    
+async def _get_single_calculator_tip(user_id: str, builder_func, mock_data_type: str) -> str:
     try:
         financial_summary = await db_queries.get_user_financial_summary(user_id)
         
-        mock_calc_data = {"amount": 500.0, "frequency": "Monthly", "returnRate": 5.0, "inflationYears": 10.0, "taxationRate": "20% BRT"}
-        prompt = prompt_builder.build_savings_tip_prompt(user_id, mock_calc_data, financial_summary)
-        
+        if mock_data_type == 'savings':
+            mock_data = {"amount": 500.0, "frequency": "Monthly", "returnRate": 5.0, "inflationYears": 10.0, "taxationRate": "20% BRT"}
+            prompt = builder_func(user_id, mock_data, financial_summary)
+        elif mock_data_type == 'loan':
+            mock_data = {"principal": 10000.0, "annualInterestRate": 5.0, "loanTermYears": 5.0}
+            prompt = builder_func(user_id, mock_data, financial_summary)
+        elif mock_data_type == 'inflation_future':
+            mock_data = {"initialAmount": 1000.0, "annualInflationRate": 3.0, "yearsToProject": 5.0}
+            prompt = builder_func(user_id, mock_data, financial_summary)
+        else:
+            mock_data = {"fromYear": 2021, "toYear": 2025, "amount": 100.0}
+            prompt = builder_func(user_id, mock_data, financial_summary)
+            
         response = openai.chat.completions.create(
             model="gpt-4o", messages=prompt, response_format={"type": "json_object"}
         )
         tip_data = json.loads(response.choices[0].message.content)
-        tip_text = tip_data.get("tip", "A generic savings tip is: Review high-interest debts before starting new savings goals.")
-        
-        await db_queries.save_savings_tip(user_id, tip_text)
-        logger.info(f"Successfully generated and saved savings tip for user {user_id}.")
-        return True
+        return tip_data.get("tip", "Could not generate a specialized tip for this calculator.")
     
     except Exception as e:
-        logger.exception(f"Error generating and saving savings tip for user {user_id}: {e}")
-        return False
+        logger.exception(f"AI Failed to generate {mock_data_type} tip for user {user_id}: {e}")
+        return "An error occurred while generating your tip. Please try again later."
 
 
 async def generate_savings_tip_for_all_users():
-    
-    logger.info("Savings tip background task TRIGGERED.")
+    logger.info("Calculator tips background task TRIGGERED.")
     try:
         users = await db_queries.get_all_active_users()
         
@@ -155,13 +158,29 @@ async def generate_savings_tip_for_all_users():
             
         for user in users:
             user_id = str(user["_id"])
-            await _get_and_save_savings_tip_for_one_user(user_id)
+            
+            savings_task = _get_single_calculator_tip(user_id, prompt_builder.build_savings_tip_prompt, 'savings')
+            loan_task = _get_single_calculator_tip(user_id, prompt_builder.build_loan_tip_prompt, 'loan') 
+            future_task = _get_single_calculator_tip(user_id, prompt_builder.build_inflation_tip_prompt, 'inflation_future') 
+            historical_task = _get_single_calculator_tip(user_id, prompt_builder.build_historical_tip_prompt, 'historical') 
+
+            results = await asyncio.gather(savings_task, loan_task, future_task, historical_task)
+            
+            tips_data = {
+                "savingsTip": results[0],
+                "loanTip": results[1],
+                "futureValueTip": results[2],
+                "historicalTip": results[3]
+            }
+            await db_queries.save_calculator_tips(user_id, tips_data)
+            logger.info(f"Successfully generated and saved all 4 calculator tips for user {user_id}.")
+            
             await asyncio.sleep(1)
 
     except Exception as e:
-        logger.exception(f"FATAL ERROR in savings tip background task loop: {e}")
+        logger.exception(f"FATAL ERROR in calculator tip background task loop: {e}")
 
-    logger.info("Savings tip task finished.")
+    logger.info("Calculator tips task finished.")
 
 
 async def get_expense_optimization_feedback(user_id: str) -> dict:

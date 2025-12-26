@@ -225,7 +225,7 @@ def build_anomaly_detection_prompt(financial_summary: dict) -> list:
     {summary_text}
 
     **Instructions:**
-    1.  Analyze the data for potential issues such as:
+    1.  Analyze the data for potential issues suchs as:
         - Expenses are very high compared to income.
         - Debt payments are a very large percentage of income.
         - No savings or budget defined.
@@ -294,6 +294,86 @@ def build_savings_tip_prompt(user_id: str, calculator_data: dict, financial_summ
     - The tip should connect the calculator's goal to their existing financial data.
     - Example: If the 'Amount' is high, suggest they check their high-interest 'Debts' first.
     - Example: If the 'Return Rate' is low, suggest they aim higher based on their 'Income'.
+    
+    Format your response as a simple JSON object:
+    {{"tip": "Your single, concise, and personalized financial tip goes here."}}
+    
+    Now, generate the JSON response.
+    """
+    
+    return [{"role": "user", "content": prompt}]
+
+def build_loan_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
+    user_name = financial_summary.get('name', 'there')
+    summary_text = json.dumps(financial_summary) 
+    calc_text = json.dumps(calculator_data)     
+
+    prompt = f"""
+    You are Reho, an AI financial coach. A user named {user_name} has just run a LOAN REPAYMENT CALCULATOR.
+
+    **User's Current Financial Context (Use this for relevance):**
+    {summary_text}
+
+    **User's Calculation Inputs (Principal: {calculator_data.get('principal'):.2f}, Rate: {calculator_data.get('annualInterestRate')}%):**
+    {calc_text}
+    
+    **CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip focused on loan management and its impact on the user's current debt load.
+    
+    - The tip should connect the loan terms to their existing income or debt-to-income ratio.
+    
+    Format your response as a simple JSON object:
+    {{"tip": "Your single, concise, and personalized financial tip goes here."}}
+    
+    Now, generate the JSON response.
+    """
+    
+    return [{"role": "user", "content": prompt}]
+
+# --- NEW FUNCTION: Inflation (Future Value) Tip Prompt ---
+def build_inflation_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
+    user_name = financial_summary.get('name', 'there')
+    summary_text = json.dumps(financial_summary) 
+    calc_text = json.dumps(calculator_data)     
+
+    prompt = f"""
+    You are Reho, an AI financial coach. A user named {user_name} has just run a FUTURE VALUE/INFLATION CALCULATOR.
+
+    **User's Current Financial Context (Use this for relevance):**
+    {summary_text}
+
+    **User's Calculation Inputs (Initial: {calculator_data.get('initialAmount'):.2f}, Years: {calculator_data.get('yearsToProject')}):**
+    {calc_text}
+    
+    **CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip focused on the impact of inflation on the user's savings goals.
+    
+    - The tip should connect the inflation rate to their existing 'Savings Goals' or 'Income'.
+    
+    Format your response as a simple JSON object:
+    {{"tip": "Your single, concise, and personalized financial tip goes here."}}
+    
+    Now, generate the JSON response.
+    """
+    
+    return [{"role": "user", "content": prompt}]
+
+# --- NEW FUNCTION: Inflation (Historical) Tip Prompt ---
+def build_historical_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
+    user_name = financial_summary.get('name', 'there')
+    summary_text = json.dumps(financial_summary) 
+    calc_text = json.dumps(calculator_data)     
+
+    prompt = f"""
+    You are Reho, an AI financial coach. A user named {user_name} has just run a HISTORICAL INFLATION CALCULATOR.
+
+    **User's Current Financial Context (Use this for relevance):**
+    {summary_text}
+
+    **User's Calculation Inputs (Amount: {calculator_data.get('amount'):.2f}, From Year: {calculator_data.get('fromYear')}):**
+    {calc_text}
+    
+    **CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip focused on the change in buying power and how it should affect the user's current expense habits.
+    
+    - The tip should warn about the erosion of funds and suggest a change in spending/saving based on the user's expenses.
     
     Format your response as a simple JSON object:
     {{"tip": "Your single, concise, and personalized financial tip goes here."}}

@@ -1,26 +1,31 @@
 from fastapi import APIRouter, Depends
 from app.utils.security import get_user_id_from_token
 from app.db import queries as db_queries
-from app.models.calculator import FinancialTipResponse
+from app.models.calculator import CalculatorTipsResponse # NOTE: Using the new multi-tip response model
 from loguru import logger
 
 router = APIRouter(prefix="/calculator", tags=["Financial Calculator"])
 
 
-async def get_precalculated_savings_tip(user_id: str) -> str:
+async def get_precalculated_calculator_tips(user_id: str) -> dict:
     
-    tip_text = await db_queries.get_latest_savings_tip(user_id)
+    tips_data = await db_queries.get_latest_calculator_tips(user_id)
     
-    if not tip_text:
-        tip_text = "Your daily scheduled savings tip will be available after 00:00 UTC."
+    if not tips_data:
+        tips_data = {
+            "savingsTip": "Tip will be available after the midnight analysis.",
+            "loanTip": "Tip will be available after the midnight analysis.",
+            "futureValueTip": "Tip will be available after the midnight analysis.",
+            "historicalTip": "Tip will be available after the midnight analysis."
+        }
+    
+    return tips_data
 
-    return tip_text
 
-
-@router.get("/savings-tip", response_model=FinancialTipResponse)
-async def get_scheduled_savings_tip(
+@router.get("/tips", response_model=CalculatorTipsResponse)
+async def get_scheduled_calculator_tips(
     user_id: str = Depends(get_user_id_from_token) 
 ):
-    tip_text = await get_precalculated_savings_tip(user_id)
+    tips_data = await get_precalculated_calculator_tips(user_id)
     
-    return FinancialTipResponse(tip=tip_text)
+    return CalculatorTipsResponse(**tips_data)

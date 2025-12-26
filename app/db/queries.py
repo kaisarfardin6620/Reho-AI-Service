@@ -6,7 +6,6 @@ from app.utils.mongo_metrics import track_mongo_operation
 from loguru import logger
 import json
 
-@track_mongo_operation(collection='users', operation='aggregate')
 async def get_user_financial_summary(user_id: str) -> dict:
     cache_key = f"user_summary:{user_id}"
     
@@ -54,7 +53,6 @@ async def get_user_financial_summary(user_id: str) -> dict:
     
     return summary
 
-@track_mongo_operation(collection='chat_history', operation='insert')
 async def save_chat_message(user_id: str, conversation_id: str, role: str, message: str):
     try:
         await db.chat_history.insert_one({
@@ -145,27 +143,25 @@ async def get_latest_admin_alerts_for_user(user_id: str, limit: int = 5) -> list
         logger.exception(f"DB Error fetching latest admin alerts for user {user_id}: {e}")
         return []
 
-# --- NEW FUNCTIONS FOR SAVINGS TIP ---
-
-async def save_savings_tip(user_id: str, tip_text: str):
-    """Saves the pre-calculated daily savings tip."""
+async def save_calculator_tips(user_id: str, tips_data: dict):
+    """Saves the pre-calculated daily tips for all 4 calculator types in one document."""
     try:
-        await db.savings_tips.update_one(
+        await db.calculator_tips.update_one(
             {"userId": ObjectId(user_id)},
             {"$set": {
-                "tipText": tip_text,
+                "tipsData": tips_data,
                 "createdAt": datetime.datetime.utcnow()
             }},
             upsert=True
         )
     except Exception as e:
-        logger.exception(f"DB Error saving savings tip: {e}")
+        logger.exception(f"DB Error saving calculator tips: {e}")
 
-async def get_latest_savings_tip(user_id: str) -> str | None:
-    """Fetches the latest pre-calculated savings tip."""
+async def get_latest_calculator_tips(user_id: str) -> dict | None:
+    """Fetches the latest pre-calculated calculator tips (4 tips)."""
     try:
-        tip = await db.savings_tips.find_one({"userId": ObjectId(user_id)})
-        return tip.get("tipText") if tip else None
+        tips = await db.calculator_tips.find_one({"userId": ObjectId(user_id)})
+        return tips.get("tipsData") if tips else None
     except Exception as e:
-        logger.exception(f"DB Error fetching savings tip: {e}")
+        logger.exception(f"DB Error fetching calculator tips: {e}")
         return None

@@ -10,5 +10,11 @@ class SavingsCalculatorRequest(BaseModel):
     class Config:
         populate_by_name = True
 
-class FinancialTipResponse(BaseModel):
-    tip: str = Field(..., description="The single, AI-generated financial tip.")
+class CalculatorTipsResponse(BaseModel):
+    savings_tip: str = Field(..., alias="savingsTip", description="Tip for Regular Savings screen.")
+    loan_tip: str = Field(..., alias="loanTip", description="Tip for Finance Calculator (Loan Repayment).")
+    future_value_tip: str = Field(..., alias="futureValueTip", description="Tip for Inflation Calculator (Future Value).")
+    historical_tip: str = Field(..., alias="historicalTip", description="Tip for Inflation Calculator (Historical Value).")
+
+    class Config:
+        populate_by_name = True
