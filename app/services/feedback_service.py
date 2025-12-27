@@ -2,14 +2,14 @@ import json
 import asyncio
 from app.db import queries as db_queries
 from app.ai import prompt_builder
-import openai
+from openai import AsyncOpenAI
 from app.core.config import settings
 from loguru import logger
 from app.utils.retry import retry_openai
 from app.utils.metrics import track_openai_metrics
 from typing import List, Dict
 
-openai.api_key = settings.OPENAI_API_KEY
+aclient = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 @retry_openai(max_retries=3)
@@ -24,7 +24,7 @@ async def _get_report_from_ai_and_save(user_id: str, report_type: str, prompt_bu
             if report_type == 'debt' and not financial_summary.get("debts"): return False
             optimization_prompt = prompt_builder_func(financial_summary)
         
-        response = openai.chat.completions.create(
+        response = await aclient.chat.completions.create(
             model="gpt-4o",
             messages=optimization_prompt,
             response_format={"type": "json_object"} 
@@ -71,19 +71,10 @@ def _map_to_50_30_20(financial_summary: dict) -> dict:
         "actual_savings": actual_savings
     }
 
-
-async def generate_optimization_reports_for_all_users():
-    logger.info("Optimization reports background task TRIGGERED.")
-    try:
-        users = await db_queries.get_all_active_users()
-        
-        if not users:
-            logger.info("No active users found to process.")
-            return
-            
-        for user in users:
-            user_id = str(user["_id"])
-            
+async def process_user_reports(user, semaphore):
+    async with semaphore:
+        user_id = str(user["_id"])
+        try:
             financial_summary = await db_queries.get_user_financial_summary(user_id)
             
             analysis_map = _map_to_50_30_20(financial_summary)
@@ -109,7 +100,22 @@ async def generate_optimization_reports_for_all_users():
                 _get_report_from_ai_and_save(user_id, 'budget', prompt_builder.build_budget_optimization_prompt, analysis_data=budget_analysis_data),
                 _get_report_from_ai_and_save(user_id, 'debt', prompt_builder.build_debt_optimization_prompt)
             )
-            await asyncio.sleep(1)
+        except Exception as e:
+            logger.error(f"Error processing reports for user {user_id}: {e}")
+
+async def generate_optimization_reports_for_all_users():
+    logger.info("Optimization reports background task TRIGGERED.")
+    try:
+        users = await db_queries.get_all_active_users()
+        
+        if not users:
+            logger.info("No active users found to process.")
+            return
+
+        semaphore = asyncio.Semaphore(5)
+        tasks = [process_user_reports(user, semaphore) for user in users]
+        
+        await asyncio.gather(*tasks)
 
     except Exception as e:
         logger.exception(f"FATAL ERROR in optimization background task loop: {e}")
@@ -136,7 +142,7 @@ async def _get_single_calculator_tip(user_id: str, builder_func, mock_data_type:
             mock_data = {"fromYear": 2021, "toYear": 2025, "amount": 100.0}
             prompt = builder_func(user_id, mock_data, financial_summary)
             
-        response = openai.chat.completions.create(
+        response = await aclient.chat.completions.create(
             model="gpt-4o", messages=prompt, response_format={"type": "json_object"}
         )
         tip_data = json.loads(response.choices[0].message.content)
@@ -147,18 +153,10 @@ async def _get_single_calculator_tip(user_id: str, builder_func, mock_data_type:
         return "An error occurred while generating your tip. Please try again later."
 
 
-async def generate_savings_tip_for_all_users():
-    logger.info("Calculator tips background task TRIGGERED.")
-    try:
-        users = await db_queries.get_all_active_users()
-        
-        if not users:
-            logger.info("No active users found to process.")
-            return
-            
-        for user in users:
-            user_id = str(user["_id"])
-            
+async def process_user_tips(user, semaphore):
+    async with semaphore:
+        user_id = str(user["_id"])
+        try:
             savings_task = _get_single_calculator_tip(user_id, prompt_builder.build_savings_tip_prompt, 'savings')
             loan_task = _get_single_calculator_tip(user_id, prompt_builder.build_loan_tip_prompt, 'loan') 
             future_task = _get_single_calculator_tip(user_id, prompt_builder.build_inflation_tip_prompt, 'inflation_future') 
@@ -174,8 +172,22 @@ async def generate_savings_tip_for_all_users():
             }
             await db_queries.save_calculator_tips(user_id, tips_data)
             logger.info(f"Successfully generated and saved all 4 calculator tips for user {user_id}.")
+        except Exception as e:
+             logger.error(f"Error processing tips for user {user_id}: {e}")
+
+async def generate_savings_tip_for_all_users():
+    logger.info("Calculator tips background task TRIGGERED.")
+    try:
+        users = await db_queries.get_all_active_users()
+        
+        if not users:
+            logger.info("No active users found to process.")
+            return
             
-            await asyncio.sleep(1)
+        semaphore = asyncio.Semaphore(5)
+        tasks = [process_user_tips(user, semaphore) for user in users]
+        
+        await asyncio.gather(*tasks)
 
     except Exception as e:
         logger.exception(f"FATAL ERROR in calculator tip background task loop: {e}")

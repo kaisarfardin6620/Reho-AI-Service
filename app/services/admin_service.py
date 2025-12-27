@@ -4,21 +4,20 @@ from app.db import queries as db_queries
 from app.ai import prompt_builder
 from app.models.admin import AdminUserAIDashboard, SpendingHeatmapItem, InstallmentLoanInfo, PeerComparison 
 from app.models.feedback import OptimizationInsight
-import openai
+from openai import AsyncOpenAI
 from app.core.config import settings
 from loguru import logger
 from app.utils.retry import retry_openai
 from app.utils.metrics import track_openai_metrics
-from typing import List, Dict # Import for type hinting
+from typing import List, Dict
 
-openai.api_key = settings.OPENAI_API_KEY
-
+aclient = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 @retry_openai(max_retries=3)
 @track_openai_metrics()
 async def _run_anomaly_detection_ai(financial_summary: dict):
     anomaly_prompt = prompt_builder.build_anomaly_detection_prompt(financial_summary)
-    response = openai.chat.completions.create(
+    response = await aclient.chat.completions.create(
         model="gpt-4o",
         messages=anomaly_prompt,
         response_format={"type": "json_object"}
@@ -30,7 +29,7 @@ async def _run_anomaly_detection_ai(financial_summary: dict):
 async def _run_peer_comparison_ai(financial_summary: dict) -> PeerComparison:
     try:
         comparison_prompt = prompt_builder.build_peer_comparison_prompt(financial_summary)
-        response = openai.chat.completions.create(
+        response = await aclient.chat.completions.create(
             model="gpt-4o",
             messages=comparison_prompt,
             response_format={"type": "json_object"}
@@ -41,21 +40,15 @@ async def _run_peer_comparison_ai(financial_summary: dict) -> PeerComparison:
         logger.warning(f"Failed to generate Peer Comparison: {e}")
         return PeerComparison(comparison="Peer comparison data is temporarily unavailable.")
 
-
-async def run_analysis_for_all_users():
-    logger.info("Starting analysis job for all users...")
-    all_users = await db_queries.get_all_active_users()
-    
-    for user in all_users:
+async def process_single_user_admin_job(user, semaphore):
+    async with semaphore:
         user_id = str(user["_id"])
         user_email = user.get("email", "N/A")
-        logger.info(f"Analyzing data for user: {user_email} ({user_id})")
-
         try:
             financial_summary = await db_queries.get_user_financial_summary(user_id)
             
             if not financial_summary.get("incomes") and not financial_summary.get("expenses"):
-                continue
+                return
 
             alert_data = await _run_anomaly_detection_ai(financial_summary)
             
@@ -67,15 +60,22 @@ async def run_analysis_for_all_users():
                     category=alert_data["category"]
                 )
                 logger.warning(f"!!! Alert generated for user {user_email}: {alert_data['alertMessage']}")
-            
-            await asyncio.sleep(1)
-
         except Exception as e:
-            logger.exception(f"Error processing user {user_id}: {e}")
-            continue 
+            logger.exception(f"Error processing user {user_id} in admin job: {e}")
+
+async def run_analysis_for_all_users():
+    logger.info("Starting analysis job for all users...")
+    all_users = await db_queries.get_all_active_users()
+    
+    if not all_users:
+        return
+
+    semaphore = asyncio.Semaphore(5)
+    tasks = [process_single_user_admin_job(user, semaphore) for user in all_users]
+    
+    await asyncio.gather(*tasks)
     
     logger.info("Finished analysis job for all users.")
-
 
 def _calculate_category_spend(expenses: List[Dict]) -> Dict[str, float]:
     category_totals = {}
@@ -84,6 +84,7 @@ def _calculate_category_spend(expenses: List[Dict]) -> Dict[str, float]:
         amount = expense.get('amount', 0)
         category_totals[name] = category_totals.get(name, 0.0) + amount
     return category_totals
+
 async def get_single_user_admin_dashboard(user_id: str) -> AdminUserAIDashboard:
     alerts_task = db_queries.get_latest_admin_alerts_for_user(user_id)
     expense_task = db_queries.get_latest_optimization_report(user_id, "expense")
@@ -148,17 +149,13 @@ async def get_single_user_admin_dashboard(user_id: str) -> AdminUserAIDashboard:
         if category not in existing_categories:
             spending_heatmap_data.append(SpendingHeatmapItem(category=category, spendingLevel="Low"))
 
-
     return AdminUserAIDashboard(
         total_monthly_spending=total_expense,
         top_overspending_categories=["Food", "Shopping", "Subscriptions"],
         spending_growth_from_last_month="12%",
-
         spending_heatmap=spending_heatmap_data,
-        
         current_alerts=latest_alerts,
         ai_tips=all_ai_tips,
-
         debt_statuses=installment_loan_info, 
         peer_comparison=peer_comparison      
     )

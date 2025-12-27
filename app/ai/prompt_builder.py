@@ -1,4 +1,5 @@
 import json
+
 BASE_SYSTEM_PROMPT = """
 You are Reho, a friendly, knowledgeable, and encouraging AI financial assistant for a personal finance application.
 
@@ -35,7 +36,6 @@ def build_contextual_system_prompt(financial_summary: dict) -> str:
         
     context_parts.append("\nYour primary task now is to utilize the User's Financial Context immediately to answer their most recent question. DO NOT REPEAT THE GREETING OR INTRODUCTION. Proceed directly to the core topic based on the user's last message.")
  
-    
     context_parts.append("\nUse this financial data to make your advice highly personal and relevant. Analyze their situation to provide actionable insights.")
 
     context = "\n".join(context_parts)
@@ -44,10 +44,6 @@ def build_contextual_system_prompt(financial_summary: dict) -> str:
 
 
 def build_title_generation_prompt(user_message: str) -> list:
-    """
-    Creates a specific prompt for the AI to generate a short, concise title.
-    Returns a list of messages ready for the OpenAI API.
-    """
     prompt = f"""
     Summarize the following user's first message into a short, 3-5 word title for a chat conversation.
     
@@ -70,10 +66,6 @@ def build_title_generation_prompt(user_message: str) -> list:
 
 
 def build_expense_optimization_prompt(financial_summary: dict) -> list:
-    """
-    Creates a detailed prompt for the AI to perform a deep-dive analysis
-    of a user's expenses and generate a structured optimization report.
-    """
     user_name = financial_summary.get('name', 'there')
     summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
 
@@ -109,13 +101,8 @@ def build_expense_optimization_prompt(financial_summary: dict) -> list:
 
 
 def build_budget_optimization_prompt(analysis_data: dict) -> list:
-    """
-    Creates a detailed prompt for the AI to analyze a user's spending
-    against their budgets AND the 50/30/20 rule, then provide optimization advice.
-    The input is now the comprehensive analysis_data dictionary.
-    """
     user_name = analysis_data.get('name', 'there')
-    summary_text = json.dumps(analysis_data.get('financial_summary', {}))
+    summary_text = json.dumps(analysis_data.get('financial_summary', {}), default=str)
     
     analysis_breakdown = f"""
     --- 50/30/20 Budget Rule Analysis ---
@@ -163,10 +150,6 @@ def build_budget_optimization_prompt(analysis_data: dict) -> list:
 
 
 def build_debt_optimization_prompt(financial_summary: dict) -> list:
-    """
-    Creates a detailed prompt for the AI to analyze a user's debt and suggest
-    optimized payoff strategies, including comparing the Avalanche and Snowball methods.
-    """
     user_name = financial_summary.get('name', 'there')
     summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
 
@@ -212,10 +195,6 @@ def build_debt_optimization_prompt(financial_summary: dict) -> list:
 
 
 def build_anomaly_detection_prompt(financial_summary: dict) -> list:
-    """
-    Creates a prompt for the AI to detect potential financial distress or
-    anomalies in a user's data that may require an admin's attention.
-    """
     summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
 
     prompt = f"""
@@ -247,9 +226,6 @@ def build_anomaly_detection_prompt(financial_summary: dict) -> list:
 
 
 def build_peer_comparison_prompt(financial_summary: dict) -> list:
-    """
-    Creates a prompt for the AI to generate a plausible peer comparison statement.
-    """
     user_name = financial_summary.get('name', 'there')
     summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
 
@@ -272,13 +248,9 @@ def build_peer_comparison_prompt(financial_summary: dict) -> list:
     return [{"role": "user", "content": prompt}]
 
 def build_savings_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
-    """
-    Creates a prompt for the AI to generate a single, contextual financial tip 
-    based on the user's current situation and a new savings calculation.
-    """
     user_name = financial_summary.get('name', 'there')
-    summary_text = json.dumps(financial_summary) 
-    calc_text = json.dumps(calculator_data)     
+    summary_text = json.dumps(financial_summary, default=str) 
+    calc_text = json.dumps(calculator_data, default=str)     
 
     prompt = f"""
     You are Reho, an AI financial coach. A user named {user_name} has just run a SAVINGS CALCULATOR.
@@ -305,8 +277,8 @@ def build_savings_tip_prompt(user_id: str, calculator_data: dict, financial_summ
 
 def build_loan_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
     user_name = financial_summary.get('name', 'there')
-    summary_text = json.dumps(financial_summary) 
-    calc_text = json.dumps(calculator_data)     
+    summary_text = json.dumps(financial_summary, default=str) 
+    calc_text = json.dumps(calculator_data, default=str)     
 
     prompt = f"""
     You are Reho, an AI financial coach. A user named {user_name} has just run a LOAN REPAYMENT CALCULATOR.
@@ -329,11 +301,10 @@ def build_loan_tip_prompt(user_id: str, calculator_data: dict, financial_summary
     
     return [{"role": "user", "content": prompt}]
 
-# --- NEW FUNCTION: Inflation (Future Value) Tip Prompt ---
 def build_inflation_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
     user_name = financial_summary.get('name', 'there')
-    summary_text = json.dumps(financial_summary) 
-    calc_text = json.dumps(calculator_data)     
+    summary_text = json.dumps(financial_summary, default=str) 
+    calc_text = json.dumps(calculator_data, default=str)     
 
     prompt = f"""
     You are Reho, an AI financial coach. A user named {user_name} has just run a FUTURE VALUE/INFLATION CALCULATOR.
@@ -356,11 +327,10 @@ def build_inflation_tip_prompt(user_id: str, calculator_data: dict, financial_su
     
     return [{"role": "user", "content": prompt}]
 
-# --- NEW FUNCTION: Inflation (Historical) Tip Prompt ---
 def build_historical_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
     user_name = financial_summary.get('name', 'there')
-    summary_text = json.dumps(financial_summary) 
-    calc_text = json.dumps(calculator_data)     
+    summary_text = json.dumps(financial_summary, default=str) 
+    calc_text = json.dumps(calculator_data, default=str)     
 
     prompt = f"""
     You are Reho, an AI financial coach. A user named {user_name} has just run a HISTORICAL INFLATION CALCULATOR.

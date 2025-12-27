@@ -1,10 +1,17 @@
 import asyncio
 import datetime
+import json
 from bson import ObjectId
 from .client import db, redis_client
 from app.utils.mongo_metrics import track_mongo_operation
 from loguru import logger
-import json
+
+def safe_serialize(obj):
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    return str(obj)
 
 async def get_user_financial_summary(user_id: str) -> dict:
     cache_key = f"user_summary:{user_id}"
@@ -49,7 +56,7 @@ async def get_user_financial_summary(user_id: str) -> dict:
         "subscription_status": subscription.get("status", "none") if subscription else "none"
     }
     
-    await redis_client.set(cache_key, json.dumps(summary), ex=300)
+    await redis_client.set(cache_key, json.dumps(summary, default=safe_serialize), ex=300)
     
     return summary
 
@@ -65,10 +72,16 @@ async def save_chat_message(user_id: str, conversation_id: str, role: str, messa
     except Exception as e:
         logger.exception(f"DB Error saving chat message: {e}")
 
-async def get_conversation_history(conversation_id: str) -> list:
+async def get_conversation_history(conversation_id: str, limit: int = 20) -> list:
     history = []
-    cursor = db.chat_history.find({"conversation_id": conversation_id}).sort("timestamp", 1)
-    docs = await cursor.to_list(length=None) 
+    cursor = db.chat_history.find({"conversation_id": conversation_id})\
+        .sort("timestamp", -1)\
+        .limit(limit)
+    
+    docs = await cursor.to_list(length=limit) 
+    
+    docs.reverse()
+    
     for document in docs:
         role = document["role"]
         if role == "bot":
@@ -144,7 +157,6 @@ async def get_latest_admin_alerts_for_user(user_id: str, limit: int = 5) -> list
         return []
 
 async def save_calculator_tips(user_id: str, tips_data: dict):
-    """Saves the pre-calculated daily tips for all 4 calculator types in one document."""
     try:
         await db.calculator_tips.update_one(
             {"userId": ObjectId(user_id)},
@@ -158,7 +170,6 @@ async def save_calculator_tips(user_id: str, tips_data: dict):
         logger.exception(f"DB Error saving calculator tips: {e}")
 
 async def get_latest_calculator_tips(user_id: str) -> dict | None:
-    """Fetches the latest pre-calculated calculator tips (4 tips)."""
     try:
         tips = await db.calculator_tips.find_one({"userId": ObjectId(user_id)})
         return tips.get("tipsData") if tips else None
