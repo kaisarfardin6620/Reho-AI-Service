@@ -13,6 +13,19 @@ def safe_serialize(obj):
         return str(obj)
     return str(obj)
 
+def _clean_mongo_doc(doc: dict, mapping: dict = None) -> dict:
+    if not doc:
+        return None
+    
+    clean_doc = json.loads(json.dumps(doc, default=safe_serialize))
+    
+    if mapping:
+        for db_key, prompt_key in mapping.items():
+            if db_key in clean_doc:
+                clean_doc[prompt_key] = clean_doc[db_key]
+    
+    return clean_doc
+
 async def get_user_financial_summary(user_id: str) -> dict:
     cache_key = f"user_summary:{user_id}"
     
@@ -169,4 +182,49 @@ async def get_latest_calculator_tips(user_id: str) -> dict | None:
         return tips.get("tipsData") if tips else None
     except Exception as e:
         logger.exception(f"DB Error fetching calculator tips: {e}")
+        return None
+
+
+async def get_latest_savings_input(user_id: str) -> dict | None:
+    try:
+        doc = await db.savingcalculations.find_one(
+            {"userId": ObjectId(user_id)}, 
+            sort=[("createdAt", -1)] 
+        )
+        return _clean_mongo_doc(doc)
+    except Exception as e:
+        logger.warning(f"Could not fetch latest savings input: {e}")
+        return None
+
+async def get_latest_loan_input(user_id: str) -> dict | None:
+    try:
+        doc = await db.loanrepaymentcalculations.find_one(
+            {"userId": ObjectId(user_id)}, 
+            sort=[("createdAt", -1)]
+        )
+        return _clean_mongo_doc(doc)
+    except Exception as e:
+        logger.warning(f"Could not fetch latest loan input: {e}")
+        return None
+
+async def get_latest_future_value_input(user_id: str) -> dict | None:
+    try:
+        doc = await db.inflationcalculations.find_one(
+            {"userId": ObjectId(user_id)}, 
+            sort=[("createdAt", -1)]
+        )
+        return _clean_mongo_doc(doc, mapping={"years": "yearsToProject"})
+    except Exception as e:
+        logger.warning(f"Could not fetch latest future value input: {e}")
+        return None
+
+async def get_latest_historical_input(user_id: str) -> dict | None:
+    try:
+        doc = await db.inflationapicalculations.find_one(
+            {"userId": ObjectId(user_id)}, 
+            sort=[("createdAt", -1)]
+        )
+        return _clean_mongo_doc(doc)
+    except Exception as e:
+        logger.warning(f"Could not fetch latest historical input: {e}")
         return None

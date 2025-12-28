@@ -7,7 +7,7 @@ from app.core.config import settings
 from loguru import logger
 from app.utils.retry import retry_openai
 from app.utils.metrics import track_openai_metrics
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 aclient = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -125,21 +125,22 @@ async def generate_optimization_reports_for_all_users():
 
 @retry_openai(max_retries=3)
 @track_openai_metrics()
-async def _get_single_calculator_tip(user_id: str, builder_func, mock_data_type: str) -> str:
+async def _get_single_calculator_tip(user_id: str, builder_func, mock_data_type: str, custom_data: Optional[dict] = None) -> str:
     try:
         financial_summary = await db_queries.get_user_financial_summary(user_id)
         
-        if mock_data_type == 'savings':
-            mock_data = {"amount": 500.0, "frequency": "Monthly", "returnRate": 5.0, "inflationYears": 10.0, "taxationRate": "20% BRT"}
-            prompt = builder_func(user_id, mock_data, financial_summary)
-        elif mock_data_type == 'loan':
-            mock_data = {"principal": 10000.0, "annualInterestRate": 5.0, "loanTermYears": 5.0}
-            prompt = builder_func(user_id, mock_data, financial_summary)
-        elif mock_data_type == 'inflation_future':
-            mock_data = {"initialAmount": 1000.0, "annualInflationRate": 3.0, "yearsToProject": 5.0}
-            prompt = builder_func(user_id, mock_data, financial_summary)
+        if custom_data:
+            prompt = builder_func(user_id, custom_data, financial_summary)
         else:
-            mock_data = {"fromYear": 2021, "toYear": 2025, "amount": 100.0}
+            if mock_data_type == 'savings':
+                mock_data = {"amount": 500.0, "frequency": "Monthly", "returnRate": 5.0, "years": 10.0, "taxRate": 20.0}
+            elif mock_data_type == 'loan':
+                mock_data = {"principal": 10000.0, "annualInterestRate": 5.0, "loanTermYears": 5.0}
+            elif mock_data_type == 'inflation_future':
+                mock_data = {"initialAmount": 1000.0, "annualInflationRate": 3.0, "yearsToProject": 5.0}
+            else:
+                mock_data = {"fromYear": 2021, "toYear": 2025, "amount": 100.0}
+            
             prompt = builder_func(user_id, mock_data, financial_summary)
             
         response = await aclient.chat.completions.create(
@@ -151,6 +152,19 @@ async def _get_single_calculator_tip(user_id: str, builder_func, mock_data_type:
     except Exception as e:
         logger.exception(f"AI Failed to generate {mock_data_type} tip for user {user_id}: {e}")
         return "An error occurred while generating your tip. Please try again later."
+
+
+async def generate_instant_tip_from_db(user_id: str, tip_type: str, db_data: dict) -> str:
+    if tip_type == 'historical':
+         return await _get_single_calculator_tip(user_id, prompt_builder.build_historical_tip_prompt, 'historical', custom_data=db_data)
+    elif tip_type == 'inflation_future':
+        return await _get_single_calculator_tip(user_id, prompt_builder.build_inflation_tip_prompt, 'inflation_future', custom_data=db_data)
+    elif tip_type == 'savings':
+        return await _get_single_calculator_tip(user_id, prompt_builder.build_savings_tip_prompt, 'savings', custom_data=db_data)
+    elif tip_type == 'loan':
+        return await _get_single_calculator_tip(user_id, prompt_builder.build_loan_tip_prompt, 'loan', custom_data=db_data)
+    
+    return "Tip type not supported."
 
 
 async def process_user_tips(user, semaphore):
