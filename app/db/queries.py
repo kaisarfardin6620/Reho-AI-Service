@@ -1,5 +1,5 @@
 import asyncio
-import datetime
+from datetime import datetime, timezone
 import json
 from bson import ObjectId
 from .client import db, redis_client
@@ -7,7 +7,7 @@ from app.utils.mongo_metrics import track_mongo_operation
 from loguru import logger
 
 def safe_serialize(obj):
-    if isinstance(obj, (datetime.datetime, datetime.date)):
+    if isinstance(obj, (datetime, datetime.date)):
         return obj.isoformat()
     if isinstance(obj, ObjectId):
         return str(obj)
@@ -67,7 +67,7 @@ async def save_chat_message(user_id: str, conversation_id: str, role: str, messa
             "conversation_id": conversation_id,
             "role": role,
             "message": message,
-            "timestamp": datetime.datetime.utcnow()
+            "timestamp": datetime.now(timezone.utc)
         })
     except Exception as e:
         logger.exception(f"DB Error saving chat message: {e}")
@@ -104,7 +104,7 @@ async def save_optimization_report(user_id: str, report_type: str, report_data: 
             {"userId": ObjectId(user_id), "reportType": report_type},
             {"$set": {
                 "reportData": report_data,
-                "createdAt": datetime.datetime.utcnow()
+                "createdAt": datetime.now(timezone.utc)
             }},
             upsert=True
         )
@@ -129,7 +129,7 @@ async def save_admin_alert(user_id: str, user_email: str, alert_message: str, ca
             "userEmail": user_email,
             "alertMessage": alert_message,
             "category": category,
-            "createdAt": datetime.datetime.utcnow()
+            "createdAt": datetime.now(timezone.utc)
         })
     except Exception as e:
         logger.exception(f"DB Error saving admin alert: {e}")
@@ -144,13 +144,7 @@ async def get_latest_admin_alerts_for_user(user_id: str, limit: int = 5) -> list
         cursor = db.admin_alerts.find({"userId": object_id}).sort("createdAt", -1).limit(limit)
         alerts = await cursor.to_list(length=limit)
         
-        for alert in alerts:
-            if isinstance(alert.get("userId"), ObjectId):
-                alert["userId"] = str(alert["userId"])
-            if "_id" in alert:
-                del alert["_id"] 
-
-        return alerts
+        return json.loads(json.dumps(alerts, default=safe_serialize))
         
     except Exception as e:
         logger.exception(f"DB Error fetching latest admin alerts for user {user_id}: {e}")
@@ -162,7 +156,7 @@ async def save_calculator_tips(user_id: str, tips_data: dict):
             {"userId": ObjectId(user_id)},
             {"$set": {
                 "tipsData": tips_data,
-                "createdAt": datetime.datetime.utcnow()
+                "createdAt": datetime.now(timezone.utc)
             }},
             upsert=True
         )

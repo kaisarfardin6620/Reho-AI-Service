@@ -15,6 +15,7 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 
 aclient = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
+MAX_HISTORY_CONTEXT = 15
 
 @retry_openai(max_retries=3)
 @track_openai_metrics()
@@ -25,7 +26,6 @@ async def get_openai_full_response(messages_for_api: list):
         temperature=0.7
     )
     return response.choices[0].message.content
-
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -62,6 +62,7 @@ async def websocket_endpoint(websocket: WebSocket):
             initial_history = [{"role": "assistant", "content": welcome_message}]
         
         personalized_system_prompt = prompt_builder.build_contextual_system_prompt(financial_summary)
+        
         messages_for_api = [{"role": "system", "content": personalized_system_prompt}, *initial_history]
 
         while True:
@@ -78,9 +79,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
             
             await db_queries.save_chat_message(user_id, conversation_id, "user", user_message)
+            
             messages_for_api.append({"role": "user", "content": user_message})
             
-            full_reply = await get_openai_full_response(messages_for_api)
+            if len(messages_for_api) > MAX_HISTORY_CONTEXT + 1:
+                context_window = [messages_for_api[0]] + messages_for_api[-MAX_HISTORY_CONTEXT:]
+            else:
+                context_window = messages_for_api
+
+            full_reply = await get_openai_full_response(context_window)
             
             await websocket.send_json({"type": "full_response", "data": full_reply})
             await websocket.send_json({"type": "status", "data": "done"})
