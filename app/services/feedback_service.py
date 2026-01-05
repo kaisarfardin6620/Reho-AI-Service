@@ -132,6 +132,7 @@ async def _get_single_calculator_tip(user_id: str, builder_func, mock_data_type:
         if custom_data:
             prompt = builder_func(user_id, custom_data, financial_summary)
         else:
+            # Fallback mock data if needed for testing, though usually custom_data is provided
             if mock_data_type == 'savings':
                 mock_data = {"amount": 500.0, "frequency": "Monthly", "returnRate": 5.0, "years": 10.0, "taxRate": 20.0}
             elif mock_data_type == 'loan':
@@ -213,9 +214,16 @@ async def get_expense_optimization_feedback(user_id: str) -> dict:
     report = await db_queries.get_latest_optimization_report(user_id, "expense")
     if report:
         return report
+
+    # Fallback: Generate immediately if missing
+    logger.info(f"Expense report missing for {user_id}, generating on-demand.")
+    success = await _get_report_from_ai_and_save(user_id, 'expense', prompt_builder.build_expense_optimization_prompt)
+    
+    if success:
+        return await db_queries.get_latest_optimization_report(user_id, "expense")
     
     return {
-        "summary": "Report not yet generated for today. Please check back later.",
+        "summary": "Report could not be generated. Please ensure you have added expenses.",
         "insights": []
     }
 
@@ -225,8 +233,38 @@ async def get_budget_optimization_feedback(user_id: str) -> dict:
     if report:
         return report
     
+    # Fallback: Generate immediately if missing
+    logger.info(f"Budget report missing for {user_id}, generating on-demand.")
+    try:
+        financial_summary = await db_queries.get_user_financial_summary(user_id)
+        analysis_map = _map_to_50_30_20(financial_summary)
+        
+        total_income = analysis_map["total_income"]
+        if total_income > 0:
+            analysis_map["percent_essential"] = (analysis_map["actual_essential"] / total_income) * 100
+            analysis_map["percent_discretionary"] = (analysis_map["actual_discretionary"] / total_income) * 100
+            analysis_map["percent_savings"] = (analysis_map["actual_savings"] / total_income) * 100
+        else:
+            analysis_map["percent_essential"] = 0
+            analysis_map["percent_discretionary"] = 0
+            analysis_map["percent_savings"] = 0
+
+        budget_analysis_data = {
+            "name": financial_summary.get('name', 'there'),
+            "financial_summary": financial_summary,
+            **analysis_map 
+        }
+
+        success = await _get_report_from_ai_and_save(user_id, 'budget', prompt_builder.build_budget_optimization_prompt, analysis_data=budget_analysis_data)
+        
+        if success:
+            return await db_queries.get_latest_optimization_report(user_id, "budget")
+
+    except Exception as e:
+        logger.error(f"Failed to generate budget report on demand: {e}")
+
     return {
-        "summary": "Report not yet generated for today. Please check back later.",
+        "summary": "Report not yet generated. Please ensure you have set up income and budgets.",
         "insights": []
     }    
     
@@ -236,7 +274,14 @@ async def get_debt_optimization_feedback(user_id: str) -> dict:
     if report:
         return report
     
+    # Fallback: Generate immediately if missing
+    logger.info(f"Debt report missing for {user_id}, generating on-demand.")
+    success = await _get_report_from_ai_and_save(user_id, 'debt', prompt_builder.build_debt_optimization_prompt)
+    
+    if success:
+        return await db_queries.get_latest_optimization_report(user_id, "debt")
+    
     return {
-        "summary": "Report not yet generated for today. Please check back later.",
+        "summary": "Report could not be generated. Please ensure you have added debts.",
         "insights": []
     }

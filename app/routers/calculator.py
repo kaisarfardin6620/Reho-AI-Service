@@ -43,26 +43,39 @@ async def get_scheduled_calculator_tips(
     ai_tasks = []
     task_map = {}
 
+    # Check Savings Input
     if latest_savings:
         t = feedback_service.generate_instant_tip_from_db(user_id, 'savings', latest_savings)
         ai_tasks.append(t)
         task_map[len(ai_tasks)-1] = "savingsTip"
+    else:
+        cached_tips["savingsTip"] = "Please run a Savings calculation to receive a personalized tip."
         
+    # Check Loan Input
     if latest_loan:
         t = feedback_service.generate_instant_tip_from_db(user_id, 'loan', latest_loan)
         ai_tasks.append(t)
         task_map[len(ai_tasks)-1] = "loanTip"
+    else:
+        cached_tips["loanTip"] = "Please run a Loan calculation to receive a personalized tip."
 
+    # Check Future Value Input
     if latest_future:
         t = feedback_service.generate_instant_tip_from_db(user_id, 'inflation_future', latest_future)
         ai_tasks.append(t)
         task_map[len(ai_tasks)-1] = "futureValueTip"
+    else:
+        cached_tips["futureValueTip"] = "Please run a Future Value calculation to receive a personalized tip."
         
+    # Check Historical Input
     if latest_hist:
         t = feedback_service.generate_instant_tip_from_db(user_id, 'historical', latest_hist)
         ai_tasks.append(t)
         task_map[len(ai_tasks)-1] = "historicalTip"
+    else:
+        cached_tips["historicalTip"] = "Please run a Historical Inflation calculation to receive a personalized tip."
 
+    # Execute any AI tasks that were queued
     if ai_tasks:
         ai_results = await asyncio.gather(*ai_tasks)
         
