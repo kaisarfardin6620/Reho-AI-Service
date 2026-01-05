@@ -6,7 +6,7 @@ load_dotenv()
 
 class Settings(BaseSettings):
     DATABASE_URL: str
-    MONGO_DB_NAME: str = "finance_app"
+    MONGO_DB_NAME: str = "finance-management"
     OPENAI_API_KEY: str
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
