@@ -156,17 +156,17 @@ async def get_latest_calculator_tips(user_id: str) -> dict | None:
     return tips.get("tipsData") if tips else None
 
 async def get_latest_savings_input(user_id: str) -> dict | None:
-    doc = await _find_collection_and_get_latest("savingcalculation", ObjectId(user_id))
+    doc = await _find_collection_and_get_latest("SavingCalculation", ObjectId(user_id))
     return _clean_mongo_doc(doc)
 
 async def get_latest_loan_input(user_id: str) -> dict | None:
-    doc = await _find_collection_and_get_latest("loanrepaymentcalculation", ObjectId(user_id))
+    doc = await _find_collection_and_get_latest("LoanRepaymentCalculation", ObjectId(user_id))
     return _clean_mongo_doc(doc)
 
 async def get_latest_future_value_input(user_id: str) -> dict | None:
-    doc = await _find_collection_and_get_latest("inflationcalculation", ObjectId(user_id))
+    doc = await _find_collection_and_get_latest("InflationCalculation", ObjectId(user_id))
     return _clean_mongo_doc(doc, mapping={"years": "yearsToProject"})
 
 async def get_latest_historical_input(user_id: str) -> dict | None:
-    doc = await _find_collection_and_get_latest("inflationapicalculation", ObjectId(user_id))
+    doc = await _find_collection_and_get_latest("InflationApiCalculation", ObjectId(user_id))
     return _clean_mongo_doc(doc)
