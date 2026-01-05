@@ -23,30 +23,6 @@ def _clean_mongo_doc(doc: dict, mapping: dict = None) -> dict:
                 clean_doc[prompt_key] = clean_doc[db_key]
     return clean_doc
 
-async def _find_collection_and_get_latest(partial_name: str, user_id: ObjectId):
-    try:
-        all_collections = await db.list_collection_names()
-        target_collection = None
-        for name in all_collections:
-            if partial_name.lower() in name.lower():
-                target_collection = name
-                break
-        
-        if not target_collection:
-            logger.warning(f"⚠️ Could not find any collection matching '{partial_name}'")
-            return None
-
-        doc = await db[target_collection].find_one(
-            {"userId": user_id}, 
-            sort=[("_id", -1)]
-        )
-        if doc:
-            logger.info(f"✅ Found data in collection: '{target_collection}'")
-        return doc
-        
-    except Exception as e:
-        logger.error(f"Error searching collection for {partial_name}: {e}")
-        return None
 
 async def get_user_financial_summary(user_id: str) -> dict:
     cache_key = f"user_summary:{user_id}"
@@ -155,18 +131,31 @@ async def get_latest_calculator_tips(user_id: str) -> dict | None:
     tips = await db.calculator_tips.find_one({"userId": ObjectId(user_id)})
     return tips.get("tipsData") if tips else None
 
+
 async def get_latest_savings_input(user_id: str) -> dict | None:
-    doc = await _find_collection_and_get_latest("SavingCalculation", ObjectId(user_id))
+    doc = await db.savingcalculations.find_one(
+        {"userId": ObjectId(user_id)}, 
+        sort=[("_id", -1)]
+    )
     return _clean_mongo_doc(doc)
 
 async def get_latest_loan_input(user_id: str) -> dict | None:
-    doc = await _find_collection_and_get_latest("LoanRepaymentCalculation", ObjectId(user_id))
+    doc = await db.loanrepaymentcalculations.find_one(
+        {"userId": ObjectId(user_id)}, 
+        sort=[("_id", -1)]
+    )
     return _clean_mongo_doc(doc)
 
 async def get_latest_future_value_input(user_id: str) -> dict | None:
-    doc = await _find_collection_and_get_latest("InflationCalculation", ObjectId(user_id))
+    doc = await db.inflationcalculations.find_one(
+        {"userId": ObjectId(user_id)}, 
+        sort=[("_id", -1)]
+    )
     return _clean_mongo_doc(doc, mapping={"years": "yearsToProject"})
 
 async def get_latest_historical_input(user_id: str) -> dict | None:
-    doc = await _find_collection_and_get_latest("InflationApiCalculation", ObjectId(user_id))
+    doc = await db.inflationapicalculations.find_one(
+        {"userId": ObjectId(user_id)}, 
+        sort=[("_id", -1)]
+    )
     return _clean_mongo_doc(doc)
