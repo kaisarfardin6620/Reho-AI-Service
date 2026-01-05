@@ -16,30 +16,47 @@ def safe_serialize(obj):
 def _clean_mongo_doc(doc: dict, mapping: dict = None) -> dict:
     if not doc:
         return None
-    
     clean_doc = json.loads(json.dumps(doc, default=safe_serialize))
-    
     if mapping:
         for db_key, prompt_key in mapping.items():
             if db_key in clean_doc:
                 clean_doc[prompt_key] = clean_doc[db_key]
-    
     return clean_doc
+
+async def _find_collection_and_get_latest(partial_name: str, user_id: ObjectId):
+    try:
+        all_collections = await db.list_collection_names()
+        target_collection = None
+        for name in all_collections:
+            if partial_name.lower() in name.lower():
+                target_collection = name
+                break
+        
+        if not target_collection:
+            logger.warning(f"⚠️ Could not find any collection matching '{partial_name}'")
+            return None
+
+        doc = await db[target_collection].find_one(
+            {"userId": user_id}, 
+            sort=[("_id", -1)]
+        )
+        if doc:
+            logger.info(f"✅ Found data in collection: '{target_collection}'")
+        return doc
+        
+    except Exception as e:
+        logger.error(f"Error searching collection for {partial_name}: {e}")
+        return None
 
 async def get_user_financial_summary(user_id: str) -> dict:
     cache_key = f"user_summary:{user_id}"
-    
     cached_summary = await redis_client.get(cache_key)
     if cached_summary:
-        logger.info(f"Redis Cache HIT for {user_id}")
         return json.loads(cached_summary)
-    
-    logger.info(f"Redis Cache MISS for {user_id}. Fetching from MongoDB.")
     
     try:
         object_id = ObjectId(user_id)
     except Exception:
-        logger.error(f"Invalid user_id format provided: {user_id}") 
         raise ValueError(f"Invalid user_id format provided: {user_id}")
     
     user_task = db.users.find_one({"_id": object_id})
@@ -70,7 +87,6 @@ async def get_user_financial_summary(user_id: str) -> dict:
     }
     
     await redis_client.set(cache_key, json.dumps(summary, default=safe_serialize), ex=300)
-    
     return summary
 
 async def save_chat_message(user_id: str, conversation_id: str, role: str, message: str):
@@ -82,149 +98,75 @@ async def save_chat_message(user_id: str, conversation_id: str, role: str, messa
             "message": message,
             "timestamp": datetime.now(timezone.utc)
         })
-    except Exception as e:
-        logger.exception(f"DB Error saving chat message: {e}")
+    except Exception:
+        pass 
 
 async def get_conversation_history(conversation_id: str, limit: int = 20) -> list:
-    history = []
-    cursor = db.chat_history.find({"conversation_id": conversation_id})\
-        .sort("timestamp", -1)\
-        .limit(limit)
-    
+    cursor = db.chat_history.find({"conversation_id": conversation_id}).sort("timestamp", -1).limit(limit)
     docs = await cursor.to_list(length=limit) 
-    
     docs.reverse()
-    
+    history = []
     for document in docs:
         role = document["role"]
-        if role == "bot":
-            role = "assistant"
+        if role == "bot": role = "assistant"
         history.append({"role": role, "content": document["message"]})
     return history
 
-
 async def get_all_active_users() -> list:
-    try:
-        cursor = db.users.find({"isDeleted": False})
-        return await cursor.to_list(length=None)
-    except Exception as e:
-        logger.exception(f"DB Error fetching all users: {e}")
-        return []
+    cursor = db.users.find({"isDeleted": False})
+    return await cursor.to_list(length=None)
 
 async def save_optimization_report(user_id: str, report_type: str, report_data: dict):
-    try:
-        await db.optimization_reports.update_one(
-            {"userId": ObjectId(user_id), "reportType": report_type},
-            {"$set": {
-                "reportData": report_data,
-                "createdAt": datetime.now(timezone.utc)
-            }},
-            upsert=True
-        )
-    except Exception as e:
-        logger.exception(f"DB Error saving optimization report: {e}")
+    await db.optimization_reports.update_one(
+        {"userId": ObjectId(user_id), "reportType": report_type},
+        {"$set": {"reportData": report_data, "createdAt": datetime.now(timezone.utc)}},
+        upsert=True
+    )
 
 async def get_latest_optimization_report(user_id: str, report_type: str) -> dict | None:
-    try:
-        report = await db.optimization_reports.find_one({
-            "userId": ObjectId(user_id), 
-            "reportType": report_type
-        }, sort=[("createdAt", -1)])
-        return report.get("reportData") if report else None
-    except Exception as e:
-        logger.exception(f"DB Error fetching optimization report: {e}")
-        return None
+    report = await db.optimization_reports.find_one(
+        {"userId": ObjectId(user_id), "reportType": report_type}, 
+        sort=[("createdAt", -1)]
+    )
+    return report.get("reportData") if report else None
 
 async def save_admin_alert(user_id: str, user_email: str, alert_message: str, category: str):
-    try:
-        await db.admin_alerts.insert_one({
-            "userId": ObjectId(user_id),
-            "userEmail": user_email,
-            "alertMessage": alert_message,
-            "category": category,
-            "createdAt": datetime.now(timezone.utc)
-        })
-    except Exception as e:
-        logger.exception(f"DB Error saving admin alert: {e}")
+    await db.admin_alerts.insert_one({
+        "userId": ObjectId(user_id), "userEmail": user_email,
+        "alertMessage": alert_message, "category": category, "createdAt": datetime.now(timezone.utc)
+    })
 
 async def get_latest_admin_alerts_for_user(user_id: str, limit: int = 5) -> list:
     try:
-        object_id = ObjectId(user_id)
-    except Exception:
-        raise ValueError("Invalid user_id format provided.")
-
-    try:
-        cursor = db.admin_alerts.find({"userId": object_id}).sort("createdAt", -1).limit(limit)
+        cursor = db.admin_alerts.find({"userId": ObjectId(user_id)}).sort("createdAt", -1).limit(limit)
         alerts = await cursor.to_list(length=limit)
-        
         return json.loads(json.dumps(alerts, default=safe_serialize))
-        
-    except Exception as e:
-        logger.exception(f"DB Error fetching latest admin alerts for user {user_id}: {e}")
+    except Exception:
         return []
 
 async def save_calculator_tips(user_id: str, tips_data: dict):
-    try:
-        await db.calculator_tips.update_one(
-            {"userId": ObjectId(user_id)},
-            {"$set": {
-                "tipsData": tips_data,
-                "createdAt": datetime.now(timezone.utc)
-            }},
-            upsert=True
-        )
-    except Exception as e:
-        logger.exception(f"DB Error saving calculator tips: {e}")
+    await db.calculator_tips.update_one(
+        {"userId": ObjectId(user_id)},
+        {"$set": {"tipsData": tips_data, "createdAt": datetime.now(timezone.utc)}},
+        upsert=True
+    )
 
 async def get_latest_calculator_tips(user_id: str) -> dict | None:
-    try:
-        tips = await db.calculator_tips.find_one({"userId": ObjectId(user_id)})
-        return tips.get("tipsData") if tips else None
-    except Exception as e:
-        logger.exception(f"DB Error fetching calculator tips: {e}")
-        return None
-
+    tips = await db.calculator_tips.find_one({"userId": ObjectId(user_id)})
+    return tips.get("tipsData") if tips else None
 
 async def get_latest_savings_input(user_id: str) -> dict | None:
-    try:
-        doc = await db.savingcalculations.find_one(
-            {"userId": ObjectId(user_id)}, 
-            sort=[("createdAt", -1)] 
-        )
-        return _clean_mongo_doc(doc)
-    except Exception as e:
-        logger.warning(f"Could not fetch latest savings input: {e}")
-        return None
+    doc = await _find_collection_and_get_latest("savingcalculation", ObjectId(user_id))
+    return _clean_mongo_doc(doc)
 
 async def get_latest_loan_input(user_id: str) -> dict | None:
-    try:
-        doc = await db.loanrepaymentcalculations.find_one(
-            {"userId": ObjectId(user_id)}, 
-            sort=[("createdAt", -1)]
-        )
-        return _clean_mongo_doc(doc)
-    except Exception as e:
-        logger.warning(f"Could not fetch latest loan input: {e}")
-        return None
+    doc = await _find_collection_and_get_latest("loanrepaymentcalculation", ObjectId(user_id))
+    return _clean_mongo_doc(doc)
 
 async def get_latest_future_value_input(user_id: str) -> dict | None:
-    try:
-        doc = await db.inflationcalculations.find_one(
-            {"userId": ObjectId(user_id)}, 
-            sort=[("createdAt", -1)]
-        )
-        return _clean_mongo_doc(doc, mapping={"years": "yearsToProject"})
-    except Exception as e:
-        logger.warning(f"Could not fetch latest future value input: {e}")
-        return None
+    doc = await _find_collection_and_get_latest("inflationcalculation", ObjectId(user_id))
+    return _clean_mongo_doc(doc, mapping={"years": "yearsToProject"})
 
 async def get_latest_historical_input(user_id: str) -> dict | None:
-    try:
-        doc = await db.inflationapicalculations.find_one(
-            {"userId": ObjectId(user_id)}, 
-            sort=[("createdAt", -1)]
-        )
-        return _clean_mongo_doc(doc)
-    except Exception as e:
-        logger.warning(f"Could not fetch latest historical input: {e}")
-        return None
+    doc = await _find_collection_and_get_latest("inflationapicalculation", ObjectId(user_id))
+    return _clean_mongo_doc(doc)

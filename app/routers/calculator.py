@@ -8,7 +8,6 @@ from loguru import logger
 
 router = APIRouter(prefix="/calculator", tags=["Financial Calculator"])
 
-
 async def get_precalculated_calculator_tips(user_id: str) -> dict:
     tips_data = await db_queries.get_latest_calculator_tips(user_id)
     if not tips_data:
@@ -20,25 +19,25 @@ async def get_precalculated_calculator_tips(user_id: str) -> dict:
         }
     return tips_data
 
+async def retry_for_data(func, user_id, retries=3, delay=0.5):
+    for _ in range(retries):
+        data = await func(user_id)
+        if data:
+            return data
+        await asyncio.sleep(delay)
+    return None
 
 @router.get("/tips", response_model=CalculatorTipsResponse)
 async def get_scheduled_calculator_tips(
     user_id: str = Depends(get_user_id_from_token) 
 ):
     cached_tips = await get_precalculated_calculator_tips(user_id)
-    
-    savings_input_task = db_queries.get_latest_savings_input(user_id)
-    loan_input_task = db_queries.get_latest_loan_input(user_id)
-    future_input_task = db_queries.get_latest_future_value_input(user_id)
-    hist_input_task = db_queries.get_latest_historical_input(user_id)
-    
-    results = await asyncio.gather(
-        savings_input_task, 
-        loan_input_task, 
-        future_input_task, 
-        hist_input_task
-    )
-    
+    async def fetch_savings(): return await retry_for_data(db_queries.get_latest_savings_input, user_id)
+    async def fetch_loan(): return await retry_for_data(db_queries.get_latest_loan_input, user_id)
+    async def fetch_future(): return await retry_for_data(db_queries.get_latest_future_value_input, user_id)
+    async def fetch_hist(): return await retry_for_data(db_queries.get_latest_historical_input, user_id)
+
+    results = await asyncio.gather(fetch_savings(), fetch_loan(), fetch_future(), fetch_hist())
     latest_savings, latest_loan, latest_future, latest_hist = results
     
     ai_tasks = []
