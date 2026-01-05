@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, date, timezone
 import json
 from bson import ObjectId
 from .client import db, redis_client
@@ -7,7 +7,7 @@ from app.utils.mongo_metrics import track_mongo_operation
 from loguru import logger
 
 def safe_serialize(obj):
-    if isinstance(obj, (datetime, datetime.date)):
+    if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     if isinstance(obj, ObjectId):
         return str(obj)
