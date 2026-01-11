@@ -79,3 +79,45 @@ SCHEDULER_API_KEY=internal_secret_key_for_cron_jobs
 # Config
 API_BASE_URL=http://localhost:8000
 ALLOWED_HOST_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+
+### 2. Run Locally (Python)
+code
+Bash
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the server
+uvicorn app.main:app --reload --port 8000
+
+### 3. Run with Docker
+code
+Bash
+docker-compose up --build -d
+
+The API will be available at http://localhost:8070 (mapped port).
+
+
+📂 Project Structure
+code
+Code
+├── app/
+│   ├── ai/                # Prompt Engineering & Builders
+│   ├── core/              # Config settings
+│   ├── db/                # Database queries (Mongo & Redis)
+│   ├── models/            # Pydantic Schemas
+│   ├── routers/           # API Endpoints (Chat, Admin, Feedback, etc.)
+│   ├── services/          # Business Logic
+│   ├── utils/             # Security, Logging, Metrics
+│   └── main.py            # Application Entry Point
+├── logs/                  # Application Logs
+├── daily_job_runner.py    # Script to trigger scheduled tasks
+├── Dockerfile
+├── docker-compose.yml
+└── requirements.txt
+🔗 Related Projects
+Main Backend: finance-management-backend
