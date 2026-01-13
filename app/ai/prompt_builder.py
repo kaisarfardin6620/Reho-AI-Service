@@ -124,20 +124,23 @@ def build_budget_optimization_prompt(analysis_data: dict) -> list:
     {analysis_breakdown}
 
     **Instructions:**
-    1.  **Analyze 50/30/20:** Use the Critical Analysis Data to assess if the user is over or under the 50/30/20 targets. Identify the largest discrepancy.
-    2.  **Analyze Budget vs. Actuals:** Also consider their manually defined budgets and expenses.
-    3.  **Generate a High-Level Summary:** Write a 1-2 sentence summary of their overall budget health and 50/30/20 adherence.
-    4.  **Provide Actionable Insights:** Generate 3 to 5 specific, actionable insights. Each insight must include:
-        - `insight`: A clear observation (e.g., "Spending exceeds 50% Essential target by 5%").
-        - `suggestion`: A concrete step to reallocate funds to hit the 50/30/20 goal.
-        - `category`: The relevant category (e.g., "Essential", "Discretionary").
-    5.  **Format Your Response as a VALID JSON object.** The JSON must match this exact structure:
+    1.  **START WITH THE 50/30/20 RULE EXPLANATION:** 
+        - In your 'summary', explicitly explain the rule: "The 50/30/20 rule is a simple budgeting guideline that helps you manage your money by dividing your after-tax income into 3 categories: Needs (50%), Wants (30%), and Savings (20%)."
+        - Then, immediately compare their ACTUAL percentages to these targets.
+
+    2.  **Provide Strategic Insights:** Generate 3 to 5 specific, actionable insights.
+        - **If Essentials > 50%:** Do not just say "cut costs." Be specific. Suggest shopping around for insurance, switching energy suppliers, or refinancing specific loans found in their data.
+        - **If they are FAR OFF (e.g., Needs > 60%):** Do not demand immediate perfection. Provide a **"Transitional Budget"** plan in one of the insights. Suggest a "Phase 1" target (e.g., 60% Needs), then "Phase 2" (55%), then "Phase 3" (50%).
+        - **Income vs. Cuts:** If their costs are already lean, suggest increasing income (upskilling, side hustles) rather than just cutting wants.
+        - **Saving:** If Savings < 20%, suggest specific methods like automating transfers or using round-up apps.
+
+    3.  **Format Your Response as a VALID JSON object.** The JSON must match this exact structure:
         {{
-            "summary": "Your main finding goes here, referencing the 50/30/20 rule.",
+            "summary": "Explain 50/30/20 here and compare their actuals.",
             "insights": [
                 {{
-                    "insight": "Observation about 50/30/20 or a budget vs. actual discrepancy.",
-                    "suggestion": "A concrete action the user can take to balance their budget.",
+                    "insight": "Observation (e.g., 'Essentials are at 70%').",
+                    "suggestion": "Specific advice (e.g., 'Transitional Plan: Phase 1... or Shop for cheaper energy').",
                     "category": "Budget Category"
                 }}
             ]
@@ -151,6 +154,9 @@ def build_budget_optimization_prompt(analysis_data: dict) -> list:
 
 def build_debt_optimization_prompt(financial_summary: dict) -> list:
     user_name = financial_summary.get('name', 'there')
+    total_income = sum(i.get('amount', 0) for i in financial_summary.get('incomes', []))
+    total_expenses = sum(e.get('amount', 0) for e in financial_summary.get('expenses', []))
+    disposable_income = max(0, total_income - total_expenses)
     summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
 
     prompt = f"""
@@ -158,31 +164,36 @@ def build_debt_optimization_prompt(financial_summary: dict) -> list:
 
     **User's Financial Data:**
     {summary_text}
+    **Calculated Context:**
+    - Disposable Income ("What's Left"): £{disposable_income:.2f}
 
     **Instructions:**
-    1.  **Analyze Debt Load:** Review the user's total debt, individual debts, and monthly payments in relation to their income and expenses.
-    2.  **Generate a High-Level Summary:** Write a 1-2 sentence summary of their overall debt situation.
-    3.  **Provide Strategic Insights:** Generate 3 to 5 actionable insights. Your first two insights MUST be a comparison of the 'Debt Avalanche' and 'Debt Snowball' methods for this specific user.
-        - For Avalanche: Explain what it is and which debt they should target first.
-        - For Snowball: Explain what it is and which debt they should target first.
-        - Other insights could include suggestions like debt consolidation, increasing income, or reducing spending in specific categories to free up cash for debt repayment.
-    4.  **Format Your Response as a VALID JSON object.** The JSON must match this exact structure:
+    1.  **Analyze Debt Load:** Review the user's total debt and individual debts.
+    2.  **Generate a High-Level Summary:** 
+        - **MANDATORY:** You MUST state: "You have £{disposable_income:.2f} in your disposable 'What's left'."
+        - Explain that using some of this amount to pay off debt can save them interest and clear debt earlier.
+    3.  **Provide Strategic Insights:** Generate 3 actionable insights.
+        - **Insight 1 (Avalanche Method):** Explain "What is it?" (Paying highest interest rate first). **CRITICAL:** You MUST look at their specific 'debts' list and identify WHICH debt has the highest interest rate (or guess based on debt type if rate is missing, e.g., Credit Cards > Student Loans) and tell them to target that one first.
+        - **Insight 2 (Snowball Method):** Explain "What is it?" (Paying smallest balance first). **CRITICAL:** You MUST look at their specific 'debts' list and identify WHICH debt has the smallest balance and tell them to target that one first.
+        - **Insight 3 (Third Option):** Suggest a third relevant method (e.g., Debt Consolidation, Increasing Income, or 0% Balance Transfer) personalized to their situation.
+    4.  **Formatting:** Use clean bullet points in your suggestions.
+    5.  **Format Your Response as a VALID JSON object:**
         {{
-            "summary": "Your main finding about their debt load.",
+            "summary": "Your summary mentioning the disposable income and the benefit of paying extra.",
             "insights": [
                 {{
                     "insight": "Debt Avalanche Method",
-                    "suggestion": "Explain the strategy and identify the first debt to target (the one with the highest interest rate).",
+                    "suggestion": "What is it?\\n- Pay minimums on all.\\n- Target [Specific Debt Name].\\n- Why? Highest interest rate.",
                     "category": "Strategy"
                 }},
                 {{
                     "insight": "Debt Snowball Method",
-                    "suggestion": "Explain the strategy and identify the first debt to target (the one with the smallest balance).",
+                    "suggestion": "What is it?\\n- Pay minimums on all.\\n- Target [Specific Debt Name].\\n- Why? Smallest balance.",
                     "category": "Strategy"
                 }},
                 {{
-                    "insight": "Title for another suggestion (e.g., 'Increase Your Payments').",
-                    "suggestion": "A concrete action the user can take.",
+                    "insight": "Consolidation or Refinancing",
+                    "suggestion": "Explanation of the third option personalized to them.",
                     "category": "Action"
                 }}
             ]
@@ -318,9 +329,10 @@ def build_inflation_tip_prompt(user_id: str, calculator_data: dict, financial_su
     **CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip focused on the impact of inflation on the user's savings goals.
     
     - The tip should connect the inflation rate to their existing 'Savings Goals' or 'Income'.
+    - **MANDATORY:** You MUST add the source at the end of the tip exactly like this: "Source: worldbank.org".
     
     Format your response as a simple JSON object:
-    {{"tip": "Your single, concise, and personalized financial tip goes here."}}
+    {{"tip": "Your single, concise, and personalized financial tip goes here. Source: worldbank.org"}}
     
     Now, generate the JSON response.
     """
@@ -330,7 +342,9 @@ def build_inflation_tip_prompt(user_id: str, calculator_data: dict, financial_su
 def build_historical_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
     user_name = financial_summary.get('name', 'there')
     summary_text = json.dumps(financial_summary, default=str) 
-    calc_text = json.dumps(calculator_data, default=str)     
+    calc_text = json.dumps(calculator_data, default=str)
+    from_year = calculator_data.get('fromYear', '1970')
+    to_year = calculator_data.get('toYear', '2025')
 
     prompt = f"""
     You are Reho, an AI financial coach. A user named {user_name} has just run a HISTORICAL INFLATION CALCULATOR.
@@ -338,15 +352,18 @@ def build_historical_tip_prompt(user_id: str, calculator_data: dict, financial_s
     **User's Current Financial Context (Use this for relevance):**
     {summary_text}
 
-    **User's Calculation Inputs (Amount: {calculator_data.get('amount'):.2f}, From Year: {calculator_data.get('fromYear')}):**
+    **User's Calculation Inputs (Amount: {calculator_data.get('amount'):.2f}, From Year: {from_year}):**
     {calc_text}
     
-    **CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip focused on the change in buying power and how it should affect the user's current expense habits.
+    **CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip focused on the change in buying power.
     
-    - The tip should warn about the erosion of funds and suggest a change in spending/saving based on the user's expenses.
+    **MANDATORY REQUIREMENTS:**
+    1.  The tip MUST explicitly state the period in text: "inflation from {from_year} – {to_year}" (or current year).
+    2.  The tip MUST warn about the erosion of funds.
+    3.  The tip MUST add the source at the very end exactly like this: "Source: worldbank.org".
     
     Format your response as a simple JSON object:
-    {{"tip": "Your single, concise, and personalized financial tip goes here."}}
+    {{"tip": "Your single financial tip including the period text. Source: worldbank.org"}}
     
     Now, generate the JSON response.
     """
