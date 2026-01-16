@@ -288,24 +288,53 @@ def build_savings_tip_prompt(user_id: str, calculator_data: dict, financial_summ
 
 def build_loan_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
     user_name = financial_summary.get('name', 'there')
+    
+    # Calculate Contextual Numbers for the AI
+    total_income = sum(i.get('amount', 0) for i in financial_summary.get('incomes', []))
+    total_expenses = sum(e.get('amount', 0) for e in financial_summary.get('expenses', []))
+    current_debts = sum(d.get('amount', 0) for d in financial_summary.get('debts', []))
+    disposable_income = max(0, total_income - total_expenses)
+    
     summary_text = json.dumps(financial_summary, default=str) 
     calc_text = json.dumps(calculator_data, default=str)     
 
     prompt = f"""
     You are Reho, an AI financial coach. A user named {user_name} has just run a LOAN REPAYMENT CALCULATOR.
 
-    **User's Current Financial Context (Use this for relevance):**
+    **User's Current Financial Context:**
     {summary_text}
+    
+    **Pre-calculated Data:**
+    - Current Monthly Income: £{total_income}
+    - Current Monthly Expenses: £{total_expenses}
+    - Current Disposable Income: £{disposable_income}
+    - Current Total Debt: £{current_debts}
 
-    **User's Calculation Inputs (Principal: {calculator_data.get('principal'):.2f}, Rate: {calculator_data.get('annualInterestRate')}%):**
+    **User's New Loan Inputs:**
     {calc_text}
     
-    **CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip focused on loan management and its impact on the user's current debt load.
+    **CRITICAL TASK:** Generate a specific Financial Tip analyzing this new loan.
     
-    - The tip should connect the loan terms to their existing income or debt-to-income ratio.
+    **FORMATTING RULES (Strictly Follow This Structure):**
+    1.  **Currency:** All amounts MUST be in British Pounds (£).
+    2.  **Structure:** Use a clean bulleted list (using hyphens "-") with line breaks.
+    3.  **Content Requirements:**
+        - **Show the amount of new loan:** (From inputs).
+        - **Show how much this increases your debt:** (New Principal + Current Debt).
+        - **Show the reduction in disposable income:** (This is the estimated monthly payment of the new loan).
+        - **Show the debt-to-income ratio:** (Calculate: (Total Monthly Debt Payments + New Loan Payment) / Gross Monthly Income).
+        - **Alternative Action:** Suggest considering alternatives like borrowing from family/friends before committing.
     
+    **Example Output Format:**
+    "Here is the impact of this new loan:
+    - New Loan Amount: £1,000
+    - New Total Debt Load: Increases from £5,000 to £6,000
+    - Impact on Disposable Income: Reduces your £500 monthly surplus by approx £85
+    - New Debt-to-Income Ratio: Increases to 38%
+    - Suggestion: Before committing, consider if you can borrow from family or friends to avoid this interest."
+
     Format your response as a simple JSON object:
-    {{"tip": "Your single, concise, and personalized financial tip goes here."}}
+    {{"tip": "Your formatted text string here..."}}
     
     Now, generate the JSON response.
     """
