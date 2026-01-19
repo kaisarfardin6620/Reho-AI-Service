@@ -189,28 +189,28 @@ def build_debt_optimization_prompt(financial_summary: dict) -> list:
     3.  **Provide Strategic Insights:** Generate 3 actionable insights using these EXACT definitions:
         - **Insight 1 (Debt Avalanche Method):** 
           - **Definition:** Pay off your HIGHEST INTEREST RATE debt first (saves more money long-term).
-          - Explain "What is it?" in your own words based on this definition.
           - **CRITICAL:** You MUST look at their specific 'debts' list and identify WHICH EXACT debt has the highest interest rate (or guess based on debt type if rate is missing, e.g., Credit Cards > Student Loans > Personal Loans) and tell them to target that specific debt by name with its £ amount.
+          - In the "Why?" section, provide a brief 1-2 sentence explanation of WHY paying the highest interest rate first saves money long-term.
           - Use £ for all amounts.
         - **Insight 2 (Debt Snowball Method):** 
           - **Definition:** Pay off your SMALLEST DEBT first (quick win, motivational boost).
-          - Explain "What is it?" in your own words based on this definition.
           - **CRITICAL:** You MUST look at their specific 'debts' list and identify WHICH EXACT debt has the smallest balance and tell them to target that specific debt by name with its £ amount.
+          - In the "Why?" section, provide a brief 1-2 sentence explanation of WHY paying the smallest balance first gives you a psychological boost and motivation to keep going.
           - Use £ for all amounts.
         - **Insight 3 (Third Option):** Suggest a third relevant method (e.g., Debt Consolidation, Increasing Income, or 0% Balance Transfer) personalized to their situation. Use £ for all amounts.
     4.  **Formatting:** Use clean bullet points in your suggestions with £ for all amounts.
-    5.  **Format Your Response as a VALID JSON object:**
+    5.  **Format Your Response as a VALID JSON object with this EXACT structure:**
         {{
             "summary": "Your summary mentioning the disposable income (in £) and the benefit of paying extra.",
             "insights": [
                 {{
                     "insight": "Debt Avalanche Method",
-                    "suggestion": "What is it?\\n- Pay minimums on all debts.\\n- Target [Specific Debt Name] (£[amount]).\\n- Why? It has the highest interest rate, so paying it first saves you the most money long-term.",
+                    "suggestion": "What is it?\\n- Pay minimums on all debts.\\n- Target [Specific Debt Name] (£[amount]).\\n- Why? [1-2 sentence explanation about saving money on interest by targeting highest rate first]",
                     "category": "Strategy"
                 }},
                 {{
                     "insight": "Debt Snowball Method",
-                    "suggestion": "What is it?\\n- Pay minimums on all debts.\\n- Target [Specific Debt Name] (£[amount]).\\n- Why? It has the smallest balance, so you'll clear it fast and get a motivational boost.",
+                    "suggestion": "What is it?\\n- Pay minimums on all debts.\\n- Target [Specific Debt Name] (£[amount]).\\n- Why? [1-2 sentence explanation about psychological boost and motivation from clearing smallest debt first]",
                     "category": "Strategy"
                 }},
                 {{
