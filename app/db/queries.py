@@ -23,6 +23,14 @@ def _clean_mongo_doc(doc: dict, mapping: dict = None) -> dict:
                 clean_doc[prompt_key] = clean_doc[db_key]
     return clean_doc
 
+def calculate_implied_interest_rate(debt_doc):
+    cap_rep = float(debt_doc.get("capitalRepayment") or 0)
+    int_rep = float(debt_doc.get("interestRepayment") or 0)
+    total_payment = cap_rep + int_rep
+    
+    if total_payment > 0:
+        return round((int_rep / total_payment) * 100, 2)
+    return 0.0
 
 async def get_user_financial_summary(user_id: str) -> dict:
     cache_key = f"user_summary:{user_id}"
@@ -52,12 +60,22 @@ async def get_user_financial_summary(user_id: str) -> dict:
         r for r in results if not isinstance(r, Exception)
     )
     
+    formatted_debts = []
+    if debts:
+        for d in debts:
+            formatted_debts.append({
+                "name": d.get("name"),
+                "amount": d.get("amount"),
+                "monthlyPayment": d.get("monthlyPayment"),
+                "interestRate": calculate_implied_interest_rate(d)
+            })
+
     summary = {
         "name": user.get("name", "there") if user else "there",
         "incomes": [{"name": i.get("name"), "amount": i.get("amount"), "frequency": i.get("frequency")} for i in incomes],
         "expenses": [{"name": e.get("name"), "amount": e.get("amount"), "frequency": e.get("frequency")} for e in expenses],
         "budgets": [{"name": b.get("name"), "amount": b.get("amount"), "category": b.get("category")} for b in budgets],
-        "debts": [{"name": d.get("name"), "amount": d.get("amount"), "monthlyPayment": d.get("monthlyPayment")} for d in debts],
+        "debts": formatted_debts,
         "saving_goals": [{"name": sg.get("name"), "totalAmount": sg.get("totalAmount"), "monthlyTarget": sg.get("monthlyTarget")} for sg in saving_goals],
         "subscription_status": subscription.get("status", "none") if subscription else "none"
     }
