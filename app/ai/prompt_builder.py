@@ -168,7 +168,9 @@ def build_debt_optimization_prompt(financial_summary: dict) -> list:
     user_name = financial_summary.get('name', 'there')
     total_income = sum(i.get('amount', 0) for i in financial_summary.get('incomes', []))
     total_expenses = sum(e.get('amount', 0) for e in financial_summary.get('expenses', []))
-    disposable_income = max(0, total_income - total_expenses)
+    total_debt_payments = sum(d.get('monthlyPayment', 0) for d in financial_summary.get('debts', []))
+    disposable_income = max(0, total_income - total_expenses - total_debt_payments)
+    
     summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
 
     prompt = f"""
@@ -179,12 +181,12 @@ def build_debt_optimization_prompt(financial_summary: dict) -> list:
     **User's Financial Data:**
     {summary_text}
     **Calculated Context:**
-    - Disposable Income ("What's Left"): £{disposable_income:.2f}
+    - Disposable Income ("What's Left" after expenses and payments): £{disposable_income:.2f}
 
     **Instructions:**
     1.  **Analyze Debt Load:** Review the user's total debt and individual debts.
     2.  **Generate a High-Level Summary:** 
-        - **MANDATORY:** You MUST state: "You have £{disposable_income:.2f} in your disposable 'What's left'."
+        - **MANDATORY:** You MUST state: "You have approx £{disposable_income:.2f} in your disposable 'What's left'."
         - Explain that using some of this amount to pay off debt can save them interest and clear debt earlier. Use £ for all amounts.
     3.  **Provide Strategic Insights:** Generate 3 actionable insights using these EXACT definitions:
         - **Insight 1 (Debt Avalanche Method):** 
@@ -325,12 +327,11 @@ def build_savings_tip_prompt(user_id: str, calculator_data: dict, financial_summ
 
 def build_loan_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
     user_name = financial_summary.get('name', 'there')
-    
-    # Calculate Contextual Numbers for the AI
     total_income = sum(i.get('amount', 0) for i in financial_summary.get('incomes', []))
     total_expenses = sum(e.get('amount', 0) for e in financial_summary.get('expenses', []))
-    current_debts = sum(d.get('amount', 0) for d in financial_summary.get('debts', []))
-    disposable_income = max(0, total_income - total_expenses)
+    current_debt_payments = sum(d.get('monthlyPayment', 0) for d in financial_summary.get('debts', []))
+    current_debts_total = sum(d.get('amount', 0) for d in financial_summary.get('debts', []))
+    disposable_income = max(0, total_income - total_expenses - current_debt_payments)
     
     summary_text = json.dumps(financial_summary, default=str) 
     calc_text = json.dumps(calculator_data, default=str)     
@@ -346,8 +347,9 @@ def build_loan_tip_prompt(user_id: str, calculator_data: dict, financial_summary
     **Pre-calculated Data:**
     - Current Monthly Income: £{total_income:.2f}
     - Current Monthly Expenses: £{total_expenses:.2f}
-    - Current Disposable Income: £{disposable_income:.2f}
-    - Current Total Debt: £{current_debts:.2f}
+    - Current Monthly Debt Payments: £{current_debt_payments:.2f}
+    - Current Disposable Income ("What's Left"): £{disposable_income:.2f}
+    - Current Total Debt Load: £{current_debts_total:.2f}
 
     **User's New Loan Inputs:**
     {calc_text}
@@ -359,9 +361,9 @@ def build_loan_tip_prompt(user_id: str, calculator_data: dict, financial_summary
     2.  **Structure:** Use a clean bulleted list (using hyphens "-") with line breaks.
     3.  **Content Requirements:**
         - **Show the amount of new loan:** (From inputs) in £.
-        - **Show how much this increases your debt:** (New Principal + Current Debt) in £.
+        - **Show how much this increases your debt:** (New Principal + Current Total Debt Load) in £.
         - **Show the reduction in disposable income:** (This is the estimated monthly payment of the new loan) in £.
-        - **Show the debt-to-income ratio:** (Calculate: (Total Monthly Debt Payments + New Loan Payment) / Gross Monthly Income).
+        - **Show the debt-to-income ratio:** (Calculate: (Current Monthly Debt Payments + New Loan Payment) / Gross Monthly Income).
         - **Alternative Action:** Suggest considering alternatives like borrowing from family/friends before committing.
     
     **Example Output Format:**
