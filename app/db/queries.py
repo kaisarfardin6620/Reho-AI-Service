@@ -73,7 +73,7 @@ async def get_user_financial_summary(user_id: str) -> dict:
     summary = {
         "name": user.get("name", "there") if user else "there",
         "incomes": [{"name": i.get("name"), "amount": i.get("amount"), "frequency": i.get("frequency")} for i in incomes],
-        "expenses": [{"name": e.get("name"), "amount": e.get("amount"), "frequency": e.get("frequency")} for e in expenses],
+        "expenses": [{"name": e.get("name"), "amount": e.get("amount"), "frequency": e.get("frequency"), "budgetCategory": e.get("budgetCategory")} for e in expenses],
         "budgets": [{"name": b.get("name"), "amount": b.get("amount"), "category": b.get("category")} for b in budgets],
         "debts": formatted_debts,
         "saving_goals": [{"name": sg.get("name"), "totalAmount": sg.get("totalAmount"), "monthlyTarget": sg.get("monthlyTarget")} for sg in saving_goals],

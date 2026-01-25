@@ -51,15 +51,28 @@ def _map_to_50_30_20(financial_summary: dict) -> dict:
     all_commitments = financial_summary.get("expenses", []) + financial_summary.get("debts", [])
     
     for item in all_commitments:
-        name = item.get('name', '').lower()
         amount = item.get('amount') or item.get('monthlyPayment', 0)
-        
-        if any(keyword in name for keyword in ['rent', 'mortgage', 'utility', 'bill', 'grocery', 'insurance', 'loan', 'debt', 'payment']):
+        category_type = str(item.get('budgetCategory', '')).strip().lower()
+
+        if category_type in ['essential', 'needs']:
             actual_essential += amount
-        elif any(keyword in name for keyword in ['netflix', 'spotify', 'dining', 'entertainment', 'shopping', 'hobby', 'travel']):
+        elif category_type in ['discretionary', 'wants']:
             actual_discretionary += amount
+        elif category_type == 'savings':
+            actual_savings += amount
+        else:
+            name = item.get('name', '').lower()
+            if any(keyword in name for keyword in ['rent', 'mortgage', 'utility', 'bill', 'grocery', 'insurance', 'loan', 'debt', 'payment']):
+                actual_essential += amount
+            elif any(keyword in name for keyword in ['netflix', 'spotify', 'dining', 'entertainment', 'shopping', 'hobby', 'travel']):
+                actual_discretionary += amount
+            else:
+                if item.get('monthlyPayment') is not None:
+                    actual_essential += amount
+                else:
+                    actual_discretionary += amount
         
-    actual_savings = sum(s.get('monthlyTarget', 0) for s in financial_summary.get('saving_goals', []))
+    actual_savings += sum(s.get('monthlyTarget', 0) for s in financial_summary.get('saving_goals', []))
     
     total_commitments = actual_essential + actual_discretionary + actual_savings
 
@@ -132,7 +145,6 @@ async def _get_single_calculator_tip(user_id: str, builder_func, mock_data_type:
         if custom_data:
             prompt = builder_func(user_id, custom_data, financial_summary)
         else:
-            # Fallback mock data if needed for testing, though usually custom_data is provided
             if mock_data_type == 'savings':
                 mock_data = {"amount": 500.0, "frequency": "Monthly", "returnRate": 5.0, "years": 10.0, "taxRate": 20.0}
             elif mock_data_type == 'loan':
@@ -215,7 +227,6 @@ async def get_expense_optimization_feedback(user_id: str) -> dict:
     if report:
         return report
 
-    # Fallback: Generate immediately if missing
     logger.info(f"Expense report missing for {user_id}, generating on-demand.")
     success = await _get_report_from_ai_and_save(user_id, 'expense', prompt_builder.build_expense_optimization_prompt)
     
@@ -233,7 +244,6 @@ async def get_budget_optimization_feedback(user_id: str) -> dict:
     if report:
         return report
     
-    # Fallback: Generate immediately if missing
     logger.info(f"Budget report missing for {user_id}, generating on-demand.")
     try:
         financial_summary = await db_queries.get_user_financial_summary(user_id)
@@ -274,7 +284,6 @@ async def get_debt_optimization_feedback(user_id: str) -> dict:
     if report:
         return report
     
-    # Fallback: Generate immediately if missing
     logger.info(f"Debt report missing for {user_id}, generating on-demand.")
     success = await _get_report_from_ai_and_save(user_id, 'debt', prompt_builder.build_debt_optimization_prompt)
     
