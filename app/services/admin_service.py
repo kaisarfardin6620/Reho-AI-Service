@@ -65,15 +65,21 @@ async def process_single_user_admin_job(user, semaphore):
 
 async def run_analysis_for_all_users():
     logger.info("Starting analysis job for all users...")
-    all_users = await db_queries.get_all_active_users()
     
-    if not all_users:
-        return
+    active_tasks = set()
+    MAX_CONCURRENT_USERS = 10
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_USERS)
 
-    semaphore = asyncio.Semaphore(5)
-    tasks = [process_single_user_admin_job(user, semaphore) for user in all_users]
+    async for user in db_queries.get_all_active_users_cursor():
+        if len(active_tasks) >= MAX_CONCURRENT_USERS:
+            done, pending = await asyncio.wait(active_tasks, return_when=asyncio.FIRST_COMPLETED)
+            active_tasks = pending
+        
+        task = asyncio.create_task(process_single_user_admin_job(user, semaphore))
+        active_tasks.add(task)
     
-    await asyncio.gather(*tasks)
+    if active_tasks:
+        await asyncio.wait(active_tasks)
     
     logger.info("Finished analysis job for all users.")
 

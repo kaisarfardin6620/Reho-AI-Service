@@ -59,24 +59,53 @@ async def get_user_financial_summary(user_id: str) -> dict:
     user, incomes, expenses, budgets, debts, saving_goals, subscription = (
         r for r in results if not isinstance(r, Exception)
     )
-    
+    budget_map = {}
+    if budgets:
+        for b in budgets:
+            b_id = str(b.get("_id"))
+            budget_map[b_id] = b.get("category") or b.get("name") or "Uncategorized"
+
+    formatted_expenses = []
+    if expenses:
+        for e in expenses:
+            b_id = str(e.get("budgetId")) if e.get("budgetId") else None
+            category_name = budget_map.get(b_id, "Others")
+            
+            formatted_expenses.append({
+                "name": e.get("name"),
+                "amount": e.get("amount"),
+                "frequency": e.get("frequency"),
+                "budgetCategory": category_name 
+            })
+
     formatted_debts = []
     if debts:
         for d in debts:
+            stored_rate = d.get("userInterestRate")
+            if stored_rate is not None:
+                rate = float(stored_rate)
+            else:
+                rate = calculate_implied_interest_rate(d)
+
             formatted_debts.append({
                 "name": d.get("name"),
                 "amount": d.get("amount"),
                 "monthlyPayment": d.get("monthlyPayment"),
-                "interestRate": calculate_implied_interest_rate(d)
+                "interestRate": rate
             })
 
     summary = {
         "name": user.get("name", "there") if user else "there",
         "incomes": [{"name": i.get("name"), "amount": i.get("amount"), "frequency": i.get("frequency")} for i in incomes],
-        "expenses": [{"name": e.get("name"), "amount": e.get("amount"), "frequency": e.get("frequency"), "budgetCategory": e.get("budgetCategory")} for e in expenses],
+        "expenses": formatted_expenses,
         "budgets": [{"name": b.get("name"), "amount": b.get("amount"), "category": b.get("category")} for b in budgets],
         "debts": formatted_debts,
-        "saving_goals": [{"name": sg.get("name"), "totalAmount": sg.get("totalAmount"), "monthlyTarget": sg.get("monthlyTarget")} for sg in saving_goals],
+        "saving_goals": [{
+            "name": sg.get("name"), 
+            "totalAmount": sg.get("totalAmount"), 
+            "monthlyTarget": sg.get("monthlyTarget"),
+            "savedAmount": sg.get("savedMoney", 0)
+        } for sg in saving_goals],
         "subscription_status": subscription.get("status", "none") if subscription else "none"
     }
     
@@ -106,9 +135,10 @@ async def get_conversation_history(conversation_id: str, limit: int = 20) -> lis
         history.append({"role": role, "content": document["message"]})
     return history
 
-async def get_all_active_users() -> list:
+async def get_all_active_users_cursor():
     cursor = db.users.find({"isDeleted": False})
-    return await cursor.to_list(length=None)
+    async for user in cursor:
+        yield user
 
 async def save_optimization_report(user_id: str, report_type: str, report_data: dict):
     await db.optimization_reports.update_one(
@@ -148,7 +178,6 @@ async def save_calculator_tips(user_id: str, tips_data: dict):
 async def get_latest_calculator_tips(user_id: str) -> dict | None:
     tips = await db.calculator_tips.find_one({"userId": ObjectId(user_id)})
     return tips.get("tipsData") if tips else None
-
 
 async def get_latest_savings_input(user_id: str) -> dict | None:
     doc = await db.savingcalculations.find_one(

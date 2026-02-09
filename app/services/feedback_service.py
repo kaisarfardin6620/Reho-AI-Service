@@ -119,16 +119,20 @@ async def process_user_reports(user, semaphore):
 async def generate_optimization_reports_for_all_users():
     logger.info("Optimization reports background task TRIGGERED.")
     try:
-        users = await db_queries.get_all_active_users()
-        
-        if not users:
-            logger.info("No active users found to process.")
-            return
+        active_tasks = set()
+        MAX_CONCURRENT_USERS = 10
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_USERS)
 
-        semaphore = asyncio.Semaphore(5)
-        tasks = [process_user_reports(user, semaphore) for user in users]
-        
-        await asyncio.gather(*tasks)
+        async for user in db_queries.get_all_active_users_cursor():
+            if len(active_tasks) >= MAX_CONCURRENT_USERS:
+                done, pending = await asyncio.wait(active_tasks, return_when=asyncio.FIRST_COMPLETED)
+                active_tasks = pending
+            
+            task = asyncio.create_task(process_user_reports(user, semaphore))
+            active_tasks.add(task)
+
+        if active_tasks:
+            await asyncio.wait(active_tasks)
 
     except Exception as e:
         logger.exception(f"FATAL ERROR in optimization background task loop: {e}")
@@ -205,16 +209,20 @@ async def process_user_tips(user, semaphore):
 async def generate_savings_tip_for_all_users():
     logger.info("Calculator tips background task TRIGGERED.")
     try:
-        users = await db_queries.get_all_active_users()
-        
-        if not users:
-            logger.info("No active users found to process.")
-            return
+        active_tasks = set()
+        MAX_CONCURRENT_USERS = 10
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_USERS)
+
+        async for user in db_queries.get_all_active_users_cursor():
+            if len(active_tasks) >= MAX_CONCURRENT_USERS:
+                done, pending = await asyncio.wait(active_tasks, return_when=asyncio.FIRST_COMPLETED)
+                active_tasks = pending
             
-        semaphore = asyncio.Semaphore(5)
-        tasks = [process_user_tips(user, semaphore) for user in users]
+            task = asyncio.create_task(process_user_tips(user, semaphore))
+            active_tasks.add(task)
         
-        await asyncio.gather(*tasks)
+        if active_tasks:
+            await asyncio.wait(active_tasks)
 
     except Exception as e:
         logger.exception(f"FATAL ERROR in calculator tip background task loop: {e}")
