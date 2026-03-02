@@ -41,10 +41,10 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    conversation_id = f"fixed_convo_{user_id}"
+    conversation_id = websocket.query_params.get("conversation_id", f"default_{user_id}")
 
     try:
-        financial_summary = await db_queries.get_user_financial_summary(user_id) 
+        financial_summary = await db_queries.get_user_financial_summary(user_id, skip_cache=True) 
         
         initial_history = await db_queries.get_conversation_history(conversation_id)
 

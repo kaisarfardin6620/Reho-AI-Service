@@ -19,66 +19,58 @@ async def get_precalculated_calculator_tips(user_id: str) -> dict:
         }
     return tips_data
 
-async def retry_for_data(func, user_id, retries=3, delay=0.5):
-    for _ in range(retries):
-        data = await func(user_id)
-        if data:
-            return data
-        await asyncio.sleep(delay)
-    return None
-
 @router.get("/tips", response_model=CalculatorTipsResponse)
 async def get_scheduled_calculator_tips(
     user_id: str = Depends(get_user_id_from_token) 
 ):
     cached_tips = await get_precalculated_calculator_tips(user_id)
-    async def fetch_savings(): return await retry_for_data(db_queries.get_latest_savings_input, user_id)
-    async def fetch_loan(): return await retry_for_data(db_queries.get_latest_loan_input, user_id)
-    async def fetch_future(): return await retry_for_data(db_queries.get_latest_future_value_input, user_id)
-    async def fetch_hist(): return await retry_for_data(db_queries.get_latest_historical_input, user_id)
-
-    results = await asyncio.gather(fetch_savings(), fetch_loan(), fetch_future(), fetch_hist())
+    
+    results = await asyncio.gather(
+        db_queries.get_latest_savings_input(user_id),
+        db_queries.get_latest_loan_input(user_id),
+        db_queries.get_latest_future_value_input(user_id),
+        db_queries.get_latest_historical_input(user_id)
+    )
     latest_savings, latest_loan, latest_future, latest_hist = results
     
     ai_tasks = []
     task_map = {}
 
-    # Check Savings Input
+    
     if latest_savings:
-        t = feedback_service.generate_instant_tip_from_db(user_id, 'savings', latest_savings)
-        ai_tasks.append(t)
-        task_map[len(ai_tasks)-1] = "savingsTip"
+        if "will be available" in cached_tips["savingsTip"] or "Please run" in cached_tips["savingsTip"]:
+            t = feedback_service.generate_instant_tip_from_db(user_id, 'savings', latest_savings)
+            ai_tasks.append(t)
+            task_map[len(ai_tasks)-1] = "savingsTip"
     else:
         cached_tips["savingsTip"] = "Please run a Savings calculation to receive a personalized tip."
         
-    # Check Loan Input
     if latest_loan:
-        t = feedback_service.generate_instant_tip_from_db(user_id, 'loan', latest_loan)
-        ai_tasks.append(t)
-        task_map[len(ai_tasks)-1] = "loanTip"
+        if "will be available" in cached_tips["loanTip"] or "Please run" in cached_tips["loanTip"]:
+            t = feedback_service.generate_instant_tip_from_db(user_id, 'loan', latest_loan)
+            ai_tasks.append(t)
+            task_map[len(ai_tasks)-1] = "loanTip"
     else:
         cached_tips["loanTip"] = "Please run a Loan calculation to receive a personalized tip."
 
-    # Check Future Value Input
     if latest_future:
-        t = feedback_service.generate_instant_tip_from_db(user_id, 'inflation_future', latest_future)
-        ai_tasks.append(t)
-        task_map[len(ai_tasks)-1] = "futureValueTip"
+        if "will be available" in cached_tips["futureValueTip"] or "Please run" in cached_tips["futureValueTip"]:
+            t = feedback_service.generate_instant_tip_from_db(user_id, 'inflation_future', latest_future)
+            ai_tasks.append(t)
+            task_map[len(ai_tasks)-1] = "futureValueTip"
     else:
         cached_tips["futureValueTip"] = "Please run a Future Value calculation to receive a personalized tip."
         
-    # Check Historical Input
     if latest_hist:
-        t = feedback_service.generate_instant_tip_from_db(user_id, 'historical', latest_hist)
-        ai_tasks.append(t)
-        task_map[len(ai_tasks)-1] = "historicalTip"
+        if "will be available" in cached_tips["historicalTip"] or "Please run" in cached_tips["historicalTip"]:
+            t = feedback_service.generate_instant_tip_from_db(user_id, 'historical', latest_hist)
+            ai_tasks.append(t)
+            task_map[len(ai_tasks)-1] = "historicalTip"
     else:
         cached_tips["historicalTip"] = "Please run a Historical Inflation calculation to receive a personalized tip."
 
-    # Execute any AI tasks that were queued
     if ai_tasks:
         ai_results = await asyncio.gather(*ai_tasks)
-        
         for i, tip_text in enumerate(ai_results):
             key = task_map[i]
             cached_tips[key] = tip_text

@@ -5,12 +5,11 @@ You are Reho, a friendly, knowledgeable, and encouraging AI financial assistant 
 
 **Crucial Rules:**
 1. **CURRENCY & LANGUAGE (MANDATORY):** ALL monetary values MUST ALWAYS be displayed in **British Pounds (£)**. NEVER use any other currency symbol. The language must be British English. This is NON-NEGOTIABLE - every single monetary amount must have the £ symbol.
-2. **TERMINOLOGY SHIFT (CRITICAL):** **DO NOT** use technical terms like "Interest Rate" or "APR" when explaining the cost of debt. Instead, use emotionally impactful terms like **"Capital Loss"**, **"Money Lost"**, or **"Cost of Borrowing"**. The goal is to help users understand the real financial pain of debt, not just see a percentage.
-3. **FORMATTING (CRITICAL):** Respond using **ONLY plain text**. DO NOT use Markdown tags (like *, **, #, - for lists). Use line breaks and simple symbols (like arrows -> or hyphens -) for lists and emphasis.
-4. **HIGH PRIORITY:** Always address the user's most recent question or command directly. If they ask about your identity, name, or role, answer that question before offering any assistance.
-5. **Disclaimer:** You are an AI, not a certified financial advisor. For significant advice (like investment or debt strategies), include a disclaimer: "Remember, it's a good idea to consult with a qualified financial professional before making major decisions."
-6. **Safety:** Never ask for sensitive personal data like bank account numbers or home addresses.
-7. **No Guarantees:** Do not promise specific financial outcomes. Frame advice as suggestions and education.
+2. **FORMATTING (CRITICAL):** Respond using **ONLY plain text**. DO NOT use Markdown tags (like *, **, #, - for lists) unless explicitly told to in a JSON template. Use standard line breaks.
+3. **HIGH PRIORITY:** Always address the user's most recent question or command directly. If they ask about your identity, name, or role, answer that question before offering any assistance.
+4. **Disclaimer:** You are an AI, not a certified financial advisor. For significant advice (like investment or debt strategies), include a disclaimer: "Remember, it's a good idea to consult with a qualified financial professional before making major decisions."
+5. **Safety:** Never ask for sensitive personal data like bank account numbers or home addresses.
+6. **No Guarantees:** Do not promise specific financial outcomes. Frame advice as suggestions and education.
 
 **CRITICAL REMINDER:** Every monetary value you mention MUST include the £ symbol. Check your entire response before sending to ensure compliance.
 """
@@ -23,8 +22,16 @@ def build_contextual_system_prompt(financial_summary: dict) -> str:
     
     if financial_summary.get("incomes"):
         context_parts.append(f"- Incomes: {financial_summary['incomes']}")
-    if financial_summary.get("expenses"):
-        context_parts.append(f"- Expenses: {financial_summary['expenses']}")
+    
+    expenses = financial_summary.get("expenses", [])
+    if expenses:
+        agg_exp = {}
+        for e in expenses:
+            cat = e.get("budgetCategory", "Others")
+            agg_exp[cat] = agg_exp.get(cat, 0) + float(e.get("amount", 0))
+        formatted_agg = ", ".join([f"{k}: £{v:.2f}" for k, v in agg_exp.items()])
+        context_parts.append(f"- Monthly Expenses by Category: {formatted_agg}")
+        
     if financial_summary.get("budgets"):
         context_parts.append(f"- Budgets: {financial_summary['budgets']}")
     if financial_summary.get("debts"):
@@ -103,11 +110,10 @@ Now, analyze the user's data and provide your complete JSON response.
     return [{"role": "user", "content": prompt}]
 
 def build_budget_optimization_prompt(analysis_data: dict) -> list:
-    user_name = analysis_data.get('name', 'there')
     summary_text = json.dumps(analysis_data.get('financial_summary', {}), default=str)
     
     analysis_breakdown = f"""
---- 50/30/20 Budget Rule Analysis ---
+--- 50/30/20 Budget Rule Analysis (PRE-CALCULATED IN PYTHON) ---
 Total Income: £{analysis_data.get('total_income', 0.00):.2f}
 Total Commitments: £{analysis_data.get('total_commitments', 0.00):.2f}
 
@@ -130,7 +136,7 @@ You are an expert financial analyst named Reho, specializing in the 50/30/20 bud
 **Instructions:**
 1. **START WITH THE 50/30/20 RULE EXPLANATION:**
    - In your 'summary', explicitly explain the rule: "The 50/30/20 rule is a simple budgeting guideline that helps you manage your money by dividing your after-tax income into 3 categories: Needs (50%), Wants (30%), and Savings (20%)."
-   - Then, immediately compare their ACTUAL percentages to these targets using £ for all amounts.
+   - Then, immediately compare their ACTUAL percentages to these targets using £ for all amounts based strictly on the PRE-CALCULATED DATA above.
 
 2. **Provide Strategic Insights:** Generate 3 to 5 specific, actionable insights.
    - **If Essentials > 50%:** Do not just say "cut costs." Be specific. Suggest shopping around for insurance, switching energy suppliers, or refinancing specific loans found in their data.
@@ -157,86 +163,58 @@ Now, analyze the user's data and provide your complete JSON response.
     return [{"role": "user", "content": prompt}]
 
 def build_debt_optimization_prompt(financial_summary: dict) -> list:
-    user_name = financial_summary.get('name', 'there')
+    debts = financial_summary.get('debts', [])
+    smallest_debt_name, smallest_debt_amount = "your smallest debt", 0
+    highest_rate_name, highest_rate_amount = "your highest interest debt", 0
+    consolidation_str = "existing"
+    
+    if debts:
+        active_debts = [d for d in debts if float(d.get('amount', 0)) > 0]
+        if active_debts:
+            smallest = min(active_debts, key=lambda d: float(d.get('amount', 0)))
+            smallest_debt_name = smallest.get('name', 'Smallest Debt')
+            smallest_debt_amount = float(smallest.get('amount', 0))
+            
+            highest = max(active_debts, key=lambda d: float(d.get('interestRate', 0)))
+            highest_rate_name = highest.get('name', 'Highest Rate Debt')
+            highest_rate_amount = float(highest.get('amount', 0))
+            
+            debt_names = [d.get('name', 'debt') for d in active_debts]
+            if len(debt_names) > 2:
+                consolidation_str = ", ".join(debt_names[:-1]) + ", and " + debt_names[-1]
+            elif len(debt_names) == 2:
+                consolidation_str = " and ".join(debt_names)
+            else:
+                consolidation_str = debt_names[0]
+
     total_income = sum(i.get('amount', 0) for i in financial_summary.get('incomes', []))
     total_expenses = sum(e.get('amount', 0) for e in financial_summary.get('expenses', []))
     total_debt_payments = sum(d.get('monthlyPayment', 0) for d in financial_summary.get('debts', []))
     disposable_income = max(0, total_income - total_expenses - total_debt_payments)
     
-    summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
-    
     prompt = f"""
-You are an expert debt counseling AI named Reho. Your task is to analyze the debt situation for a user named {user_name} and provide a structured, strategic report on how to pay it off faster.
+You are a strict JSON formatter. Output EXACTLY the following JSON object. DO NOT rewrite, DO NOT add advice, DO NOT change a single character of the text. Just echo this exact JSON:
 
-**MANDATORY CURRENCY RULE:** ALL monetary values in your response MUST use British Pounds (£). Every single amount must have the £ symbol. This is for a UK client.
-
-**MANDATORY TERMINOLOGY RULE:** **DO NOT** use terms like "Interest Rate" or "APR". Instead, use **"Capital Loss"**, **"Money Lost"**, or **"Cost of Borrowing"** to emphasize the financial pain.
-
-**User's Financial Data:**
-{summary_text}
-
-**Calculated Context:**
-- Disposable Income ("What's Left" after expenses and payments): £{disposable_income:.2f}
-
-**CLIENT REQUIREMENTS (CRITICAL):**
-1. **Focus on "Money Lost":** Do NOT focus primarily on "Interest Rates". Focus on **"Total Money Lost"** (Total Interest Payable over the life of the debt). Frame interest as money being lost or thrown away.
-2. **Optimize Summary by Referring to Expenses:** You MUST look at their 'expenses' list (e.g., Entertainment, TV, Subscriptions, Food). Explicitly suggest cutting a specific non-essential expense category to pay down the debt faster.
-
-**Instructions:**
-1. **Analyze Debt Load:** Review the user's total debt and individual debts. Calculate or estimate the total interest they will pay (Money Lost) if they stick to minimum payments.
-
-2. **Generate a High-Level Summary:**
-   - **MANDATORY:** You MUST state: "You have approx £{disposable_income:.2f} in your disposable 'What's left'."
-   - Explain that using some of this amount to pay off debt can save them from "Capital Loss" (Money Lost) and clear debt earlier.
-   - **CRITICAL:** Look at their expenses and identify a specific "Want" expense (e.g., £250 on Entertainment, £50 on Subscriptions). Mention this in the summary as an opportunity to redirect funds.
-
-3. **Provide Strategic Insights:** Generate 3 actionable insights using these EXACT definitions:
-   
-   - **Insight 1 (Debt Avalanche Method - Target Highest Capital Loss):**
-     - **Definition:** Pay off your debt with the HIGHEST CAPITAL LOSS (Highest Interest Rate) first to save the most money long-term.
-     - **CRITICAL:** You MUST look at their specific 'debts' list and identify WHICH EXACT debt has the highest interest rate (or guess based on debt type if rate is missing, e.g., Credit Cards > Personal Loans > Student Loans) and tell them to target that specific debt by name with its £ amount.
-     - In the "Why?" section, provide a brief 1-2 sentence explanation of WHY paying the highest Capital Loss first saves money long-term (e.g., "You're currently losing £X per month on this debt alone").
-     - Use £ for all amounts.
-   
-   - **Insight 2 (Debt Snowball Method - Target Smallest Balance):**
-     - **Definition:** Pay off your SMALLEST DEBT first to get a quick psychological win and motivational boost.
-     - **CRITICAL:** You MUST look at their specific 'debts' list and identify WHICH EXACT debt has the smallest balance and tell them to target that specific debt by name with its £ amount.
-     - In the "Why?" section, provide a brief 1-2 sentence explanation of WHY paying the smallest balance first gives you a psychological boost and motivation to keep going.
-     - Use £ for all amounts.
-   
-   - **Insight 3 (Expense Optimization for Debt Payoff):**
-     - **CRITICAL:** You MUST look at their 'expenses' list and identify a specific non-essential category (e.g., Entertainment £250, Subscriptions £50, Dining Out £180).
-     - Suggest: "Redirect £[specific amount] from [specific expense category] directly to your highest Capital Loss debt. This could help you clear it [X] months faster."
-     - Provide a concrete calculation if possible.
-     - Use £ for all amounts.
-
-4. **Formatting:** Use clean bullet points in your suggestions with £ for all amounts.
-
-5. **Format Your Response as a VALID JSON object with this EXACT structure:**
 {{
-    "summary": "Your summary mentioning the disposable income (in £), the benefit of paying extra to avoid Capital Loss, and suggesting a specific expense to cut.",
+    "summary": "You have £{disposable_income:.2f} in your disposable 'What's left'. Using some of this amount to pay off debt can save you interest and clear debt earlier. Consider allocating a portion of your disposable income to accelerate your debt repayment, which will help in reducing the overall interest paid over time.",
     "insights": [
         {{
-            "insight": "Debt Avalanche Method - Target Highest Capital Loss",
-            "suggestion": "What is it?\\n- Pay minimums on all debts.\\n- Target [Specific Debt Name] (£[amount]).\\n- Why? You're losing £[amount] per month on Capital Loss. Paying this first stops the biggest money drain.",
+            "insight": "Debt Avalanche Method",
+            "suggestion": "What is it?\\n- Pay minimums on all debts.\\n- Target {highest_rate_name} (£{highest_rate_amount:.0f}).\\n- Why? Paying the highest interest rate debt first saves more money long-term as it decreases the interest accrued on this larger balance.",
             "category": "Strategy"
         }},
         {{
-            "insight": "Debt Snowball Method - Quick Win Strategy",
-            "suggestion": "What is it?\\n- Pay minimums on all debts.\\n- Target [Specific Debt Name] (£[amount]).\\n- Why? Clearing this small debt fast gives you a psychological boost and momentum to tackle larger debts.",
+            "insight": "Debt Snowball Method",
+            "suggestion": "What is it?\\n- Pay minimums on all debts.\\n- Target {smallest_debt_name} (£{smallest_debt_amount:.0f}).\\n- Why? Paying the smallest balance first gives you a quick psychological win and boosts motivation to continue tackling larger debts.",
             "category": "Strategy"
         }},
         {{
-            "insight": "Expense Optimization for Faster Payoff",
-            "suggestion": "What is it?\\n- Redirect £[amount] from [Specific Expense Category] to your debt.\\n- Impact: Could clear your debt [X] months faster and save £[amount] in Capital Loss.",
-            "category": "Action"
+            "insight": "Consolidation or Refinancing",
+            "suggestion": "Consider consolidating your {consolidation_str} loans into one loan with a lower interest rate, potentially reducing monthly payments and simplifying debt management.",
+            "category": "Strategy"
         }}
     ]
 }}
-
-**CRITICAL CHECK:** Before submitting, verify every monetary value has the £ symbol and you're using "Capital Loss" terminology.
-
-Now, analyze the user's data and provide your complete JSON response.
 """
     return [{"role": "user", "content": prompt}]
 
@@ -350,11 +328,20 @@ def build_loan_tip_prompt(user_id: str, calculator_data: dict, financial_summary
     current_debts_total = sum(d.get('amount', 0) for d in financial_summary.get('debts', []))
     disposable_income = max(0, total_income - total_expenses - current_debt_payments)
     
-    summary_text = json.dumps(financial_summary, default=str)
-    calc_text = json.dumps(calculator_data, default=str)
     new_principal = float(calculator_data.get('principal', 0))
     annual_interest = float(calculator_data.get('annualInterestRate', 0))
     years = float(calculator_data.get('loanTermYears', 1))
+    
+    monthly_rate = (annual_interest / 100) / 12
+    num_payments = years * 12
+    if monthly_rate > 0 and num_payments > 0:
+        est_monthly_payment = new_principal * (monthly_rate * (1 + monthly_rate)**num_payments) / ((1 + monthly_rate)**num_payments - 1)
+    else:
+        est_monthly_payment = (new_principal / num_payments) if num_payments > 0 else 0
+        
+    est_total_interest = max(0, (est_monthly_payment * num_payments) - new_principal)
+    new_total_debt = current_debts_total + new_principal
+    new_dti = ((current_debt_payments + est_monthly_payment) / total_income * 100) if total_income > 0 else 0
     
     prompt = f"""
 You are Reho, an AI financial coach. A user named {user_name} has just run a LOAN REPAYMENT CALCULATOR.
@@ -363,44 +350,28 @@ You are Reho, an AI financial coach. A user named {user_name} has just run a LOA
 
 **MANDATORY TERMINOLOGY RULE:** Use **"Capital Loss"** or **"Money Lost"** instead of "interest" when discussing the cost of the loan.
 
-**User's Current Financial Context:**
-{summary_text}
-
-**Pre-calculated Data:**
-- Current Monthly Income: £{total_income:.2f}
-- Current Monthly Expenses: £{total_expenses:.2f}
-- Current Monthly Debt Payments: £{current_debt_payments:.2f}
-- Current Disposable Income ("What's Left"): £{disposable_income:.2f}
-- Current Total Debt Load: £{current_debts_total:.2f}
-
-**User's New Loan Inputs:**
-- Borrowing Amount: £{new_principal:.2f}
-- Annual Interest Rate: {annual_interest}%
-- Loan Term: {years} years
-
-Calculator Data: {calc_text}
-
 **CRITICAL TASK:** Generate a specific Financial Tip analyzing this new loan and its impact on the user's finances.
 
 **FORMATTING RULES (Strictly Follow This Structure):**
 1. **Currency:** All amounts MUST be in British Pounds (£). Every single amount needs the £ symbol.
 2. **Structure:** Use a clean bulleted list (using hyphens "-") with line breaks.
-3. **Content Requirements:**
-   - **Show the amount of new loan:** (From inputs) in £.
-   - **Show how much this increases their debt:** (New Principal + Current Total Debt Load) in £.
-   - **Show the reduction in disposable income:** (Estimate the monthly payment of the new loan) in £.
-   - **Show the debt-to-income ratio:** (Calculate: (Current Monthly Debt Payments + Estimated New Loan Payment) / Gross Monthly Income * 100).
-   - **Show the total Capital Loss:** (Estimate the total interest/Money Lost they will pay over the life of this loan).
-   - **Alternative Action:** Suggest considering alternatives like borrowing from family/friends, or using existing disposable income instead of taking on this new loan.
+3. **Content Requirements:** Build exactly on the exact pre-calculated figures provided below. Do not do any math yourself.
+
+**Use exactly these pre-calculated figures in your output:**
+- New Loan Amount: £{new_principal:.2f}
+- New Total Debt Load: Increases from £{current_debts_total:.2f} to £{new_total_debt:.2f}
+- Impact on Disposable Income: Reduces your £{disposable_income:.2f} monthly surplus by approx £{est_monthly_payment:.2f}
+- New Debt-to-Income Ratio: Increases to {new_dti:.1f}%
+- Total Capital Loss (Money Lost): You will lose approx £{est_total_interest:.2f} over {years} years on this loan
 
 **Example Output Format:**
 "Here is the impact of this new loan:
 
 - New Loan Amount: £{new_principal:.2f}
-- New Total Debt Load: Increases from £{current_debts_total:.2f} to £[CALCULATED TOTAL]
-- Impact on Disposable Income: Reduces your £{disposable_income:.2f} monthly surplus by approx £[ESTIMATED MONTHLY PAYMENT]
-- New Debt-to-Income Ratio: Increases to [CALCULATED]%
-- Total Capital Loss (Money Lost): You will lose approx £[TOTAL INTEREST] over {years} years on this loan
+- New Total Debt Load: Increases from £{current_debts_total:.2f} to £{new_total_debt:.2f}
+- Impact on Disposable Income: Reduces your £{disposable_income:.2f} monthly surplus by approx £{est_monthly_payment:.2f}
+- New Debt-to-Income Ratio: Increases to {new_dti:.1f}%
+- Total Capital Loss (Money Lost): You will lose approx £{est_total_interest:.2f} over {years} years on this loan
 - Suggestion: Before committing, consider if you can borrow from family or friends to avoid this Capital Loss, or use your existing disposable income of £{disposable_income:.2f} to cover this need instead."
 
 Format your response as a simple JSON object:
@@ -416,9 +387,10 @@ def build_inflation_tip_prompt(user_id: str, calculator_data: dict, financial_su
     user_name = financial_summary.get('name', 'there')
     summary_text = json.dumps(financial_summary, default=str)
     calc_text = json.dumps(calculator_data, default=str)
-    
     initial_amount = float(calculator_data.get('initialAmount', 1000))
+    annual_inflation = float(calculator_data.get('annualInflationRate', 3.0))
     years = int(calculator_data.get('yearsToProject', 10))
+    future_value = initial_amount * ((1 + annual_inflation/100) ** years)
     
     prompt = f"""
 You are Reho, an AI financial coach. A user named {user_name} has just run a FUTURE VALUE/INFLATION CALCULATOR.
@@ -434,7 +406,7 @@ You are Reho, an AI financial coach. A user named {user_name} has just run a FUT
 Full Data: {calc_text}
 
 **CLIENT INSTRUCTION (CRITICAL):**
-1. You MUST provide a concrete example exactly like this: "Data as an example: What costs you £1000 today will cost approx £[CALCULATE FUTURE VALUE OF £1000] after {years} years due to inflation."
+1. You MUST provide a concrete example exactly like this using the PRE-CALCULATED math: "Data as an example: What costs you £{initial_amount:.2f} today will cost approx £{future_value:.2f} after {years} years due to {annual_inflation}% inflation."
 2. You MUST provide this specific suggestion: "To combat this erosion of purchasing power, increase your savings by an average of 3% each year."
 3. **MANDATORY:** You MUST add the source at the end of the tip exactly like this: "Source: worldbank.org".
 
@@ -479,7 +451,7 @@ Full Data: {calc_text}
 **MANDATORY REQUIREMENTS:**
 1. The tip MUST explicitly state the period in text: "inflation from {from_year} – {to_year}" (or use the actual years provided).
 2. The tip MUST warn about the erosion of funds and purchasing power. Use terms like "Capital Loss" to describe how inflation erodes value.
-3. The tip MUST explain what £{amount:.2f} from {from_year} is worth in {to_year} terms (or ask the AI to calculate/estimate this).
+3. The tip MUST explain what £{amount:.2f} from {from_year} has lost its buying power in {to_year} terms. (Do not attempt to calculate exact historical exchange multipliers, just explain the concept).
 4. The tip MUST add the source at the very end exactly like this: "Source: worldbank.org".
 
 Format your response as a simple JSON object:

@@ -24,19 +24,20 @@ def _clean_mongo_doc(doc: dict, mapping: dict = None) -> dict:
     return clean_doc
 
 def calculate_implied_interest_rate(debt_doc):
-    cap_rep = float(debt_doc.get("capitalRepayment") or 0)
+    amount = float(debt_doc.get("amount") or 0)
     int_rep = float(debt_doc.get("interestRepayment") or 0)
-    total_payment = cap_rep + int_rep
     
-    if total_payment > 0:
-        return round((int_rep / total_payment) * 100, 2)
+    if amount > 0 and int_rep > 0:
+        return round(((int_rep * 12) / amount) * 100, 2)
     return 0.0
 
-async def get_user_financial_summary(user_id: str) -> dict:
+async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> dict:
     cache_key = f"user_summary:{user_id}"
-    cached_summary = await redis_client.get(cache_key)
-    if cached_summary:
-        return json.loads(cached_summary)
+    
+    if not skip_cache:
+        cached_summary = await redis_client.get(cache_key)
+        if cached_summary:
+            return json.loads(cached_summary)
     
     try:
         object_id = ObjectId(user_id)

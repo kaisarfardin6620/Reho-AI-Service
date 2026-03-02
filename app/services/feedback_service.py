@@ -188,21 +188,35 @@ async def process_user_tips(user, semaphore):
     async with semaphore:
         user_id = str(user["_id"])
         try:
-            savings_task = _get_single_calculator_tip(user_id, prompt_builder.build_savings_tip_prompt, 'savings')
-            loan_task = _get_single_calculator_tip(user_id, prompt_builder.build_loan_tip_prompt, 'loan') 
-            future_task = _get_single_calculator_tip(user_id, prompt_builder.build_inflation_tip_prompt, 'inflation_future') 
-            historical_task = _get_single_calculator_tip(user_id, prompt_builder.build_historical_tip_prompt, 'historical') 
+            latest_savings = await db_queries.get_latest_savings_input(user_id)
+            latest_loan = await db_queries.get_latest_loan_input(user_id)
+            latest_future = await db_queries.get_latest_future_value_input(user_id)
+            latest_hist = await db_queries.get_latest_historical_input(user_id)
 
-            results = await asyncio.gather(savings_task, loan_task, future_task, historical_task)
+            tips_data = {}
             
-            tips_data = {
-                "savingsTip": results[0],
-                "loanTip": results[1],
-                "futureValueTip": results[2],
-                "historicalTip": results[3]
-            }
+            if latest_savings:
+                tips_data["savingsTip"] = await _get_single_calculator_tip(user_id, prompt_builder.build_savings_tip_prompt, 'savings', custom_data=latest_savings)
+            else:
+                tips_data["savingsTip"] = "Please run a Savings calculation to receive a personalized tip."
+
+            if latest_loan:
+                tips_data["loanTip"] = await _get_single_calculator_tip(user_id, prompt_builder.build_loan_tip_prompt, 'loan', custom_data=latest_loan)
+            else:
+                tips_data["loanTip"] = "Please run a Loan calculation to receive a personalized tip."
+
+            if latest_future:
+                tips_data["futureValueTip"] = await _get_single_calculator_tip(user_id, prompt_builder.build_inflation_tip_prompt, 'inflation_future', custom_data=latest_future)
+            else:
+                tips_data["futureValueTip"] = "Please run a Future Value calculation to receive a personalized tip."
+
+            if latest_hist:
+                tips_data["historicalTip"] = await _get_single_calculator_tip(user_id, prompt_builder.build_historical_tip_prompt, 'historical', custom_data=latest_hist)
+            else:
+                tips_data["historicalTip"] = "Please run a Historical Inflation calculation to receive a personalized tip."
+
             await db_queries.save_calculator_tips(user_id, tips_data)
-            logger.info(f"Successfully generated and saved all 4 calculator tips for user {user_id}.")
+            logger.info(f"Successfully generated and saved real calculator tips for user {user_id}.")
         except Exception as e:
              logger.error(f"Error processing tips for user {user_id}: {e}")
 
