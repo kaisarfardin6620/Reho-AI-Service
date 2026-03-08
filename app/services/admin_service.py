@@ -15,17 +15,6 @@ aclient = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 @retry_openai(max_retries=3)
 @track_openai_metrics()
-async def _run_anomaly_detection_ai(financial_summary: dict):
-    anomaly_prompt = prompt_builder.build_anomaly_detection_prompt(financial_summary)
-    response = await aclient.chat.completions.create(
-        model="gpt-4o",
-        messages=anomaly_prompt,
-        response_format={"type": "json_object"}
-    )
-    return json.loads(response.choices[0].message.content)
-
-@retry_openai(max_retries=3)
-@track_openai_metrics()
 async def _run_peer_comparison_ai(financial_summary: dict) -> PeerComparison:
     try:
         comparison_prompt = prompt_builder.build_peer_comparison_prompt(financial_summary)
@@ -39,49 +28,6 @@ async def _run_peer_comparison_ai(financial_summary: dict) -> PeerComparison:
     except Exception as e:
         logger.warning(f"Failed to generate Peer Comparison: {e}")
         return PeerComparison(comparison="Peer comparison data is temporarily unavailable.")
-
-async def process_single_user_admin_job(user, semaphore):
-    async with semaphore:
-        user_id = str(user["_id"])
-        user_email = user.get("email", "N/A")
-        try:
-            financial_summary = await db_queries.get_user_financial_summary(user_id)
-            
-            if not financial_summary.get("incomes") and not financial_summary.get("expenses"):
-                return
-
-            alert_data = await _run_anomaly_detection_ai(financial_summary)
-            
-            if alert_data and "alertMessage" in alert_data:
-                await db_queries.save_admin_alert(
-                    user_id=user_id,
-                    user_email=user_email,
-                    alert_message=alert_data["alertMessage"],
-                    category=alert_data["category"]
-                )
-                logger.warning(f"!!! Alert generated for user {user_email}: {alert_data['alertMessage']}")
-        except Exception as e:
-            logger.exception(f"Error processing user {user_id} in admin job: {e}")
-
-async def run_analysis_for_all_users():
-    logger.info("Starting analysis job for all users...")
-    
-    active_tasks = set()
-    MAX_CONCURRENT_USERS = 10
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_USERS)
-
-    async for user in db_queries.get_all_active_users_cursor():
-        if len(active_tasks) >= MAX_CONCURRENT_USERS:
-            done, pending = await asyncio.wait(active_tasks, return_when=asyncio.FIRST_COMPLETED)
-            active_tasks = pending
-        
-        task = asyncio.create_task(process_single_user_admin_job(user, semaphore))
-        active_tasks.add(task)
-    
-    if active_tasks:
-        await asyncio.wait(active_tasks)
-    
-    logger.info("Finished analysis job for all users.")
 
 def _calculate_category_spend(expenses: List[Dict]) -> Dict[str, float]:
     category_totals = {}
@@ -99,6 +45,7 @@ async def get_single_user_admin_dashboard(user_id: str) -> AdminUserAIDashboard:
     summary_task = db_queries.get_user_financial_summary(user_id)
     
     financial_summary = await summary_task
+    
     peer_task = _run_peer_comparison_ai(financial_summary) 
 
     results = await asyncio.gather(alerts_task, expense_task, budget_task, debt_task, peer_task)
@@ -131,6 +78,7 @@ async def get_single_user_admin_dashboard(user_id: str) -> AdminUserAIDashboard:
         next_due_date="N/A",
         status=overall_status
     )
+
     category_totals = _calculate_category_spend(financial_summary.get("expenses", []))
     total_expense = sum(category_totals.values())
     
@@ -158,7 +106,7 @@ async def get_single_user_admin_dashboard(user_id: str) -> AdminUserAIDashboard:
     return AdminUserAIDashboard(
         total_monthly_spending=total_expense,
         top_overspending_categories=["Food", "Shopping", "Subscriptions"],
-        spending_growth_from_last_month="12%",
+        spending_growth_from_last_month="0%",
         spending_heatmap=spending_heatmap_data,
         current_alerts=latest_alerts,
         ai_tips=all_ai_tips,

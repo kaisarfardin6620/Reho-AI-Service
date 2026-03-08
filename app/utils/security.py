@@ -46,12 +46,3 @@ def require_admin_user(payload: dict = Depends(verify_token)) -> dict:
             detail="Access denied: Administrator privileges required."
         )
     return payload
-
-def verify_scheduler_key(x_api_key: str = Header(None, alias="X-API-KEY")):
-    if not x_api_key or x_api_key != settings.SCHEDULER_API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing scheduler API Key"
-        )
-    return True
-

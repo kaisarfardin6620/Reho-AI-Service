@@ -3,10 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.utils.logging import setup_logging
 from app.utils.metrics import track_request_metrics
+
 try:
-    from app.routers import chat, admin, calculator, feedback, schedule
+    from app.routers import chat, admin, calculator, feedback
 except ImportError:
-    from app import chat, admin, calculator, feedback, schedule
+    from app import chat, admin, calculator, feedback
 
 setup_logging()
 
@@ -26,7 +27,6 @@ app.include_router(chat.router)
 app.include_router(admin.router)
 app.include_router(calculator.router)
 app.include_router(feedback.router)
-app.include_router(schedule.router)
 
 @app.get("/health")
 async def health_check():

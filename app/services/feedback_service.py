@@ -84,62 +84,6 @@ def _map_to_50_30_20(financial_summary: dict) -> dict:
         "actual_savings": actual_savings
     }
 
-async def process_user_reports(user, semaphore):
-    async with semaphore:
-        user_id = str(user["_id"])
-        try:
-            financial_summary = await db_queries.get_user_financial_summary(user_id)
-            
-            analysis_map = _map_to_50_30_20(financial_summary)
-            total_income = analysis_map["total_income"]
-            
-            if total_income > 0:
-                analysis_map["percent_essential"] = (analysis_map["actual_essential"] / total_income) * 100
-                analysis_map["percent_discretionary"] = (analysis_map["actual_discretionary"] / total_income) * 100
-                analysis_map["percent_savings"] = (analysis_map["actual_savings"] / total_income) * 100
-            else:
-                analysis_map["percent_essential"] = 0
-                analysis_map["percent_discretionary"] = 0
-                analysis_map["percent_savings"] = 0
-                
-            budget_analysis_data = {
-                "name": financial_summary.get('name', 'there'),
-                "financial_summary": financial_summary,
-                **analysis_map 
-            }
-            
-            await asyncio.gather(
-                _get_report_from_ai_and_save(user_id, 'expense', prompt_builder.build_expense_optimization_prompt),
-                _get_report_from_ai_and_save(user_id, 'budget', prompt_builder.build_budget_optimization_prompt, analysis_data=budget_analysis_data),
-                _get_report_from_ai_and_save(user_id, 'debt', prompt_builder.build_debt_optimization_prompt)
-            )
-        except Exception as e:
-            logger.error(f"Error processing reports for user {user_id}: {e}")
-
-async def generate_optimization_reports_for_all_users():
-    logger.info("Optimization reports background task TRIGGERED.")
-    try:
-        active_tasks = set()
-        MAX_CONCURRENT_USERS = 10
-        semaphore = asyncio.Semaphore(MAX_CONCURRENT_USERS)
-
-        async for user in db_queries.get_all_active_users_cursor():
-            if len(active_tasks) >= MAX_CONCURRENT_USERS:
-                done, pending = await asyncio.wait(active_tasks, return_when=asyncio.FIRST_COMPLETED)
-                active_tasks = pending
-            
-            task = asyncio.create_task(process_user_reports(user, semaphore))
-            active_tasks.add(task)
-
-        if active_tasks:
-            await asyncio.wait(active_tasks)
-
-    except Exception as e:
-        logger.exception(f"FATAL ERROR in optimization background task loop: {e}")
-
-    logger.info("Optimization task finished.")
-
-
 @retry_openai(max_retries=3)
 @track_openai_metrics()
 async def _get_single_calculator_tip(user_id: str, builder_func, mock_data_type: str, custom_data: Optional[dict] = None) -> str:
@@ -182,66 +126,6 @@ async def generate_instant_tip_from_db(user_id: str, tip_type: str, db_data: dic
         return await _get_single_calculator_tip(user_id, prompt_builder.build_loan_tip_prompt, 'loan', custom_data=db_data)
     
     return "Tip type not supported."
-
-
-async def process_user_tips(user, semaphore):
-    async with semaphore:
-        user_id = str(user["_id"])
-        try:
-            latest_savings = await db_queries.get_latest_savings_input(user_id)
-            latest_loan = await db_queries.get_latest_loan_input(user_id)
-            latest_future = await db_queries.get_latest_future_value_input(user_id)
-            latest_hist = await db_queries.get_latest_historical_input(user_id)
-
-            tips_data = {}
-            
-            if latest_savings:
-                tips_data["savingsTip"] = await _get_single_calculator_tip(user_id, prompt_builder.build_savings_tip_prompt, 'savings', custom_data=latest_savings)
-            else:
-                tips_data["savingsTip"] = "Please run a Savings calculation to receive a personalized tip."
-
-            if latest_loan:
-                tips_data["loanTip"] = await _get_single_calculator_tip(user_id, prompt_builder.build_loan_tip_prompt, 'loan', custom_data=latest_loan)
-            else:
-                tips_data["loanTip"] = "Please run a Loan calculation to receive a personalized tip."
-
-            if latest_future:
-                tips_data["futureValueTip"] = await _get_single_calculator_tip(user_id, prompt_builder.build_inflation_tip_prompt, 'inflation_future', custom_data=latest_future)
-            else:
-                tips_data["futureValueTip"] = "Please run a Future Value calculation to receive a personalized tip."
-
-            if latest_hist:
-                tips_data["historicalTip"] = await _get_single_calculator_tip(user_id, prompt_builder.build_historical_tip_prompt, 'historical', custom_data=latest_hist)
-            else:
-                tips_data["historicalTip"] = "Please run a Historical Inflation calculation to receive a personalized tip."
-
-            await db_queries.save_calculator_tips(user_id, tips_data)
-            logger.info(f"Successfully generated and saved real calculator tips for user {user_id}.")
-        except Exception as e:
-             logger.error(f"Error processing tips for user {user_id}: {e}")
-
-async def generate_savings_tip_for_all_users():
-    logger.info("Calculator tips background task TRIGGERED.")
-    try:
-        active_tasks = set()
-        MAX_CONCURRENT_USERS = 10
-        semaphore = asyncio.Semaphore(MAX_CONCURRENT_USERS)
-
-        async for user in db_queries.get_all_active_users_cursor():
-            if len(active_tasks) >= MAX_CONCURRENT_USERS:
-                done, pending = await asyncio.wait(active_tasks, return_when=asyncio.FIRST_COMPLETED)
-                active_tasks = pending
-            
-            task = asyncio.create_task(process_user_tips(user, semaphore))
-            active_tasks.add(task)
-        
-        if active_tasks:
-            await asyncio.wait(active_tasks)
-
-    except Exception as e:
-        logger.exception(f"FATAL ERROR in calculator tip background task loop: {e}")
-
-    logger.info("Calculator tips task finished.")
 
 
 async def get_expense_optimization_feedback(user_id: str) -> dict:

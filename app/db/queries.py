@@ -6,22 +6,18 @@ from .client import db, redis_client
 from app.utils.mongo_metrics import track_mongo_operation
 from loguru import logger
 
-def safe_serialize(obj):
-    if isinstance(obj, (datetime, date)):
-        return obj.isoformat()
+def _serialize_mongo_doc(obj):
+    if obj is None:
+        return None
+    if isinstance(obj, list):
+        return [_serialize_mongo_doc(item) for item in obj]
+    if isinstance(obj, dict):
+        return {k: _serialize_mongo_doc(v) for k, v in obj.items()}
     if isinstance(obj, ObjectId):
         return str(obj)
-    return str(obj)
-
-def _clean_mongo_doc(doc: dict, mapping: dict = None) -> dict:
-    if not doc:
-        return None
-    clean_doc = json.loads(json.dumps(doc, default=safe_serialize))
-    if mapping:
-        for db_key, prompt_key in mapping.items():
-            if db_key in clean_doc:
-                clean_doc[prompt_key] = clean_doc[db_key]
-    return clean_doc
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    return obj
 
 def calculate_implied_interest_rate(debt_doc):
     amount = float(debt_doc.get("amount") or 0)
@@ -44,12 +40,22 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> 
     except Exception:
         raise ValueError(f"Invalid user_id format provided: {user_id}")
     
+    now = datetime.now(timezone.utc)
+    start_of_month = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+
+    current_month_query = {
+        "userId": object_id, 
+        "isDeleted": False,
+        "date": {"$gte": start_of_month} 
+    }
+    
+    general_query = {"userId": object_id, "isDeleted": False}
     user_task = db.users.find_one({"_id": object_id})
-    income_task = db.incomes.find({"userId": object_id, "isDeleted": False}).to_list(length=None)
-    expense_task = db.expenses.find({"userId": object_id, "isDeleted": False}).to_list(length=None)
-    budget_task = db.budgets.find({"userId": object_id, "isDeleted": False}).to_list(length=None)
-    debt_task = db.debts.find({"userId": object_id, "isDeleted": False}).to_list(length=None)
-    saving_goal_task = db.savinggoals.find({"userId": object_id, "isDeleted": False}).to_list(length=None)
+    income_task = db.incomes.find(current_month_query).to_list(length=None)
+    expense_task = db.expenses.find(current_month_query).to_list(length=None)
+    budget_task = db.budgets.find(general_query).to_list(length=None)
+    debt_task = db.debts.find(general_query).to_list(length=None)
+    saving_goal_task = db.savinggoals.find(general_query).to_list(length=None)
     subscription_task = db.subscriptions.find_one({"userId": object_id, "status": "active"})
     
     results = await asyncio.gather(
@@ -57,9 +63,12 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> 
         debt_task, saving_goal_task, subscription_task,
         return_exceptions=True
     )
+    
     user, incomes, expenses, budgets, debts, saving_goals, subscription = (
-        r for r in results if not isinstance(r, Exception)
+        r if not isinstance(r, Exception) else [] for r in results
     )
+    if isinstance(user, list) or isinstance(user, Exception): user = None
+
     budget_map = {}
     if budgets:
         for b in budgets:
@@ -110,7 +119,8 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> 
         "subscription_status": subscription.get("status", "none") if subscription else "none"
     }
     
-    await redis_client.set(cache_key, json.dumps(summary, default=safe_serialize), ex=300)
+    await redis_client.set(cache_key, json.dumps(summary), ex=30)
+    
     return summary
 
 async def save_chat_message(user_id: str, conversation_id: str, role: str, message: str):
@@ -165,7 +175,7 @@ async def get_latest_admin_alerts_for_user(user_id: str, limit: int = 5) -> list
     try:
         cursor = db.admin_alerts.find({"userId": ObjectId(user_id)}).sort("createdAt", -1).limit(limit)
         alerts = await cursor.to_list(length=limit)
-        return json.loads(json.dumps(alerts, default=safe_serialize))
+        return _serialize_mongo_doc(alerts)
     except Exception:
         return []
 
@@ -185,25 +195,28 @@ async def get_latest_savings_input(user_id: str) -> dict | None:
         {"userId": ObjectId(user_id)}, 
         sort=[("_id", -1)]
     )
-    return _clean_mongo_doc(doc)
+    return _serialize_mongo_doc(doc)
 
 async def get_latest_loan_input(user_id: str) -> dict | None:
     doc = await db.loanrepaymentcalculations.find_one(
         {"userId": ObjectId(user_id)}, 
         sort=[("_id", -1)]
     )
-    return _clean_mongo_doc(doc)
+    return _serialize_mongo_doc(doc)
 
 async def get_latest_future_value_input(user_id: str) -> dict | None:
     doc = await db.inflationcalculations.find_one(
         {"userId": ObjectId(user_id)}, 
         sort=[("_id", -1)]
     )
-    return _clean_mongo_doc(doc, mapping={"years": "yearsToProject"})
+    clean = _serialize_mongo_doc(doc)
+    if clean and "years" in clean:
+        clean["yearsToProject"] = clean["years"]
+    return clean
 
 async def get_latest_historical_input(user_id: str) -> dict | None:
     doc = await db.inflationapicalculations.find_one(
         {"userId": ObjectId(user_id)}, 
         sort=[("_id", -1)]
     )
-    return _clean_mongo_doc(doc)
+    return _serialize_mongo_doc(doc)

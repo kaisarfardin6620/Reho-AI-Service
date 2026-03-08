@@ -17,7 +17,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && .venv/bin/pip install -r requirements.txt
 
 COPY app ./app
-COPY daily_job_runner.py .
 
 FROM python:3.11-slim AS final
 
@@ -26,9 +25,7 @@ RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 WORKDIR /app
 
 COPY --from=builder /app/.venv /app/.venv
-
 COPY --from=builder /app/app ./app
-COPY --from=builder /app/daily_job_runner.py .
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
