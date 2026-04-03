@@ -1,6 +1,5 @@
 import asyncio
 import json
-from typing import List
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from app.utils.security import verify_token_ws
 from app.db import queries as db_queries
@@ -9,7 +8,7 @@ from openai import AsyncOpenAI
 from app.core.config import settings
 from loguru import logger
 from app.utils.retry import retry_openai
-from app.utils.metrics import track_openai_metrics, ACTIVE_USERS, add_active_user, remove_active_user
+from app.utils.metrics import track_openai_metrics, add_active_user, remove_active_user
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -27,11 +26,14 @@ async def get_openai_full_response(messages_for_api: list):
     )
     return response.choices[0].message.content
 
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
 
     token = websocket.query_params.get("token")
+    user_id = None
+
     try:
         user_id = verify_token_ws(token)
         add_active_user(user_id)
@@ -44,72 +46,78 @@ async def websocket_endpoint(websocket: WebSocket):
     conversation_id = websocket.query_params.get("conversation_id", f"default_{user_id}")
 
     try:
-        financial_summary = await db_queries.get_user_financial_summary(user_id, skip_cache=True) 
-        
+        financial_summary = await db_queries.get_user_financial_summary(user_id, skip_cache=True)
+
         initial_history = await db_queries.get_conversation_history(conversation_id)
 
         if initial_history:
             await websocket.send_json({"type": "initial_history", "data": initial_history})
-            
         else:
             user_name = financial_summary.get('name', 'there')
-            welcome_message = f"Hello {user_name}! I'm Reho, your personal AI financial assistant. I see you're new here! You can start by asking me to analyze your financial condition or ask for tips to save money. How can I help you today? 😊"
-            
+            welcome_message = (
+                f"Hello {user_name}! I'm Reho, your personal AI financial assistant. "
+                f"I see you're new here! You can start by asking me to analyse your financial "
+                f"condition or ask for tips to save money. How can I help you today? 😊"
+            )
             await websocket.send_json({"type": "full_response", "data": welcome_message})
-            
             await db_queries.save_chat_message(user_id, conversation_id, "assistant", welcome_message)
-            
-            initial_history =[{"role": "assistant", "content": welcome_message}]
-        
+            initial_history = [{"role": "assistant", "content": welcome_message}]
+
         personalized_system_prompt = prompt_builder.build_contextual_system_prompt(financial_summary)
-        
-        messages_for_api =[{"role": "system", "content": personalized_system_prompt}, *initial_history]
+
+        messages_for_api = [{"role": "system", "content": personalized_system_prompt}, *initial_history]
 
         while True:
             raw_data = await websocket.receive_text()
-            
+
             try:
                 try:
-                    user_data = json.loads(raw_data) 
-                    user_message = user_data.get("message", "").strip() 
+                    user_data = json.loads(raw_data)
+                    user_message = user_data.get("message", "").strip()
                 except json.JSONDecodeError:
                     logger.warning(f"Received non-JSON message from client: {raw_data}")
                     user_message = raw_data.strip()
-                
+
                 if not user_message:
                     continue
-                
+
                 await db_queries.save_chat_message(user_id, conversation_id, "user", user_message)
-                
+
                 messages_for_api.append({"role": "user", "content": user_message})
-                
+
                 if len(messages_for_api) > MAX_HISTORY_CONTEXT + 1:
                     context_window = [messages_for_api[0]] + messages_for_api[-MAX_HISTORY_CONTEXT:]
                 else:
                     context_window = messages_for_api
 
                 full_reply = await get_openai_full_response(context_window)
-                
+
                 await websocket.send_json({"type": "full_response", "data": full_reply})
                 await websocket.send_json({"type": "status", "data": "done"})
-                
+
                 await db_queries.save_chat_message(user_id, conversation_id, "assistant", full_reply)
+
                 messages_for_api.append({"role": "assistant", "content": full_reply})
-            
+
+                if len(messages_for_api) > MAX_HISTORY_CONTEXT + 1:
+                    messages_for_api = [messages_for_api[0]] + messages_for_api[-MAX_HISTORY_CONTEXT:]
+
             except Exception as inner_e:
                 logger.error(f"Error processing user message for {user_id}: {inner_e}")
                 await websocket.send_json({
-                    "type": "error", 
+                    "type": "error",
                     "data": "Sorry, I encountered an error processing your request. Please try again."
                 })
-                
+
     except WebSocketDisconnect:
         logger.info(f"Client disconnected: {user_id}")
-        remove_active_user(user_id)
+        if user_id:
+            remove_active_user(user_id)
 
     except Exception as e:
         logger.exception(f"Unexpected WebSocket error for user {user_id}: {e}")
-        remove_active_user(user_id)
+        if user_id:
+            remove_active_user(user_id)
         try:
             await websocket.send_json({"error": f"Internal server error: {str(e)}"})
         except Exception:

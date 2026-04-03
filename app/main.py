@@ -29,7 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.middleware("http")(track_request_metrics())
+app.middleware("http")(track_request_metrics)
 
 app.include_router(chat.router)
 app.include_router(admin.router)

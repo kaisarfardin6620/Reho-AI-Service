@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 
 BASE_SYSTEM_PROMPT = """
 You are Reho, a friendly, knowledgeable, and encouraging AI financial assistant for a personal finance application. Your primary goal is to help users improve their financial health by providing clear, actionable, and personalized guidance. Always maintain a supportive, positive, and non-judgmental tone.
@@ -19,10 +20,10 @@ def build_contextual_system_prompt(financial_summary: dict) -> str:
     context_parts = [f"You are speaking with {user_name}. Always address them by their name in a friendly manner."]
     context_parts.append("\nHere is a summary of their current financial situation:")
     context_parts.append("\n**CRITICAL:** All monetary amounts in your responses MUST use the £ symbol. This is mandatory for UK clients.")
-    
+
     if financial_summary.get("incomes"):
         context_parts.append(f"- Incomes: {financial_summary['incomes']}")
-    
+
     expenses = financial_summary.get("expenses", [])
     if expenses:
         agg_exp = {}
@@ -31,7 +32,7 @@ def build_contextual_system_prompt(financial_summary: dict) -> str:
             agg_exp[cat] = agg_exp.get(cat, 0) + float(e.get("amount", 0))
         formatted_agg = ", ".join([f"{k}: £{v:.2f}" for k, v in agg_exp.items()])
         context_parts.append(f"- Monthly Expenses by Category: {formatted_agg}")
-        
+
     if financial_summary.get("budgets"):
         context_parts.append(f"- Budgets: {financial_summary['budgets']}")
     if financial_summary.get("debts"):
@@ -40,14 +41,15 @@ def build_contextual_system_prompt(financial_summary: dict) -> str:
         context_parts.append(f"- Saving Goals: {financial_summary['saving_goals']}")
     if financial_summary.get("subscription_status"):
         context_parts.append(f"- Subscription Status: {financial_summary['subscription_status']}")
-    
+
     context_parts.append("\nYour primary task now is to utilize the User's Financial Context immediately to answer their most recent question. DO NOT REPEAT THE GREETING OR INTRODUCTION. Proceed directly to the core topic based on the user's last message.")
     context_parts.append("\nUse this financial data to make your advice highly personal and relevant. Analyze their situation to provide actionable insights.")
     context_parts.append("\n**TERMINOLOGY REMINDER:** When discussing debt costs, always refer to interest as 'Capital Loss' or 'Money Lost' to emphasize the real financial impact.")
     context_parts.append("\n**FINAL REMINDER:** Every single monetary value in your response must be in British Pounds with the £ symbol.")
-    
+
     context = "\n".join(context_parts)
     return f"{BASE_SYSTEM_PROMPT}\n\n--- User's Financial Context ---\n{context}"
+
 
 def build_title_generation_prompt(user_message: str) -> list:
     prompt = f"""
@@ -68,50 +70,179 @@ Your response:
 """
     return [{"role": "user", "content": prompt}]
 
-def build_expense_optimization_prompt(financial_summary: dict) -> list:
+def build_savings_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
     user_name = financial_summary.get('name', 'there')
-    summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
-    
+    summary_text = json.dumps(financial_summary, default=str)
+    has_debt = len(financial_summary.get("debts", [])) > 0
+    amount        = float(calculator_data.get('amount', 0))
+    frequency     = calculator_data.get('frequency', 'Monthly')
+    return_rate   = float(calculator_data.get('returnRate', calculator_data.get('return_rate', 0)))
+    inflation_rate = float(calculator_data.get('inflationRate', calculator_data.get('inflation_years', 0)))
+    taxation_rate = calculator_data.get('taxationRate', calculator_data.get('taxation_rate', 'N/A'))
+
+    total_debt_monthly = sum(
+        float(d.get('monthlyPayment', 0)) for d in financial_summary.get('debts', [])
+    )
+
+    if has_debt:
+        debt_instruction = f"""
+**DEBT PRIORITY RULE (CRITICAL — user has active debts):**
+You MUST open the "advice" field with this sentence EXACTLY:
+"Before focusing on savings, consider that you are losing approximately £{total_debt_monthly:.2f} per month on Capital Loss from your debts. Clearing these first will save you more money than any savings account could earn."
+Then continue with 2-3 further sentences of personalised advice using the user's financial data.
+Use the term "Capital Loss" instead of "interest rate" throughout.
+"""
+    else:
+        debt_instruction = """
+**NO DEBT RULE:**
+Encourage the user to achieve their savings goal. Mention the power of compound interest.
+Suggest increasing savings contributions by an average of 3% each year to beat inflation.
+Write 3 to 5 sentences of personalised advice using the user's financial data.
+"""
+
     prompt = f"""
-You are an expert financial analyst named Reho. Your task is to conduct a detailed analysis of the expenses for a user named {user_name} and provide a structured optimization report.
+You are Reho, an AI financial coach. A user named {user_name} has just run a SAVINGS CALCULATOR.
 
-**MANDATORY CURRENCY RULE:** ALL monetary values in your response MUST use British Pounds (£). Every single amount must have the £ symbol.
+**MANDATORY CURRENCY RULE:** ALL monetary values MUST use British Pounds (£). Every single amount needs the £ symbol.
 
-**User's Financial Data:**
+**User's Financial Context:**
 {summary_text}
 
-**Client Requirement - "Money Leaks":**
-Look specifically for categories like 'Entertainment', 'Subscriptions', 'TV', 'Dining Out', or 'Shopping' where users might be unconsciously overspending.
+{debt_instruction}
 
-**Instructions:**
-1. **Analyze Deeply:** Scrutinize the user's expense data in relation to their income and budgets. Identify key spending habits, significant expense categories, and potential areas for savings.
-2. **Generate a High-Level Summary:** Write a 1-2 sentence summary of your main findings. ALL amounts must use £.
-3. **Provide Actionable Insights:** Generate 3 to 5 specific, actionable insights. Each insight must include:
-   - `insight`: A clear observation about their spending (use £ for all amounts).
-   - `suggestion`: A concrete step the user can take to improve (use £ for all amounts).
-   - `category`: The relevant financial category (e.g., "Subscriptions", "Food", "Transportation").
-4. **Terminology:** If discussing debt costs, use "Capital Loss" or "Money Lost" instead of "interest rate".
-5. **Format Your Response as a VALID JSON object.** The JSON must match this exact structure:
+**YOUR TASK — Output a JSON object with EXACTLY these keys and NO others:**
+
 {{
-    "summary": "Your main finding goes here with £ for all amounts.",
+  "saving_amount": "£{amount:.2f}",
+  "frequency": "{frequency}",
+  "return_rate": "{return_rate}%",
+  "inflation_rate": "{inflation_rate}%",
+  "tax_rate": "{taxation_rate}",
+  "advice": "WRITE YOUR PERSONALISED ADVICE HERE following the debt/no-debt rule above. Connect advice to the user's actual savings goals and income. Use £ for all amounts. Use 'Capital Loss' instead of 'interest' for debt costs."
+}}
+
+**STRICT RULES:**
+1. The five fields saving_amount, frequency, return_rate, inflation_rate, tax_rate MUST be copied EXACTLY from the pre-filled values shown above. Do NOT change or recalculate them.
+2. Only write your personalised advice inside the "advice" field.
+3. ALL monetary values must use the £ symbol.
+4. Do not add any extra keys or text outside the JSON object.
+
+Now generate the JSON response.
+"""
+    return [{"role": "user", "content": prompt}]
+
+def build_expense_optimization_prompt(financial_summary: dict) -> list:
+    user_name = financial_summary.get('name', 'there')
+    expenses   = financial_summary.get('expenses', [])
+    summary_text = json.dumps(financial_summary, default=str)
+
+    subscription_keywords = [
+        'subscription', 'netflix', 'spotify', 'amazon prime', 'disney',
+        'apple', 'youtube', 'hulu', 'tv', 'streaming', 'prime video'
+    ]
+    subscription_total = sum(
+        float(e.get('amount', 0)) for e in expenses
+        if any(kw in str(e.get('name', '')).lower() or
+               kw in str(e.get('budgetCategory', '')).lower()
+               for kw in subscription_keywords)
+    )
+
+    category_name_counts: dict = {}
+    for e in expenses:
+        cat  = e.get('budgetCategory', 'Others')
+        name = str(e.get('name', '')).strip().lower()
+        if name:
+            category_name_counts.setdefault(cat, Counter())[name] += 1
+
+    duplicate_lines = []
+    for cat, counts in category_name_counts.items():
+        for name, cnt in counts.items():
+            if cnt > 1:
+                duplicate_lines.append(f"  - '{name.title()}' appears {cnt} times in '{cat}'")
+
+    duplicate_count   = sum(
+        1 for counts in category_name_counts.values()
+        for cnt in counts.values() if cnt > 1
+    )
+    duplicate_summary = "\n".join(duplicate_lines) if duplicate_lines else "  - No duplicate expenses detected."
+
+    total_income = sum(float(i.get('amount', 0)) for i in financial_summary.get('incomes', []))
+    discretionary_keywords = [
+        'entertainment', 'shopping', 'dining', 'eating out', 'hobby',
+        'leisure', 'clothing', 'travel', 'discretionary', 'wants'
+    ]
+    discretionary_total = sum(
+        float(e.get('amount', 0)) for e in expenses
+        if any(kw in str(e.get('budgetCategory', '')).lower() or
+               kw in str(e.get('name', '')).lower()
+               for kw in discretionary_keywords)
+    )
+    discretionary_pct = (discretionary_total / total_income * 100) if total_income > 0 else 0.0
+    total_expense     = sum(float(e.get('amount', 0)) for e in expenses)
+
+    prompt = f"""
+You are an expert financial analyst named Reho. Analyse the expense data for {user_name} and produce a structured optimisation report.
+
+**MANDATORY CURRENCY RULE:** ALL monetary values MUST use British Pounds (£).
+
+**PRE-CALCULATED DATA — use these exact figures, do NOT recalculate:**
+- Total Monthly Expenses: £{total_expense:.2f}
+- Total Monthly Income: £{total_income:.2f}
+- Total Subscription / Streaming Spend: £{subscription_total:.2f}
+- Duplicate Expense Count: {duplicate_count}
+- Duplicate Expense Detail:
+{duplicate_summary}
+- Discretionary Spend: £{discretionary_total:.2f} ({discretionary_pct:.1f}% of income, target is 30%)
+
+**Full Financial Data:**
+{summary_text}
+
+**MANDATORY — your "insights" array MUST contain EXACTLY these 4 insights in this order:**
+
+1. **Subscriptions insight**
+   insight: "Review all monthly subscriptions and any service not currently used — cancel to save money. You currently have subscription and streaming services totalling £{subscription_total:.2f}."
+   suggestion: Advise the user to audit each subscription and cancel unused ones to free up cash.
+   category: "Subscriptions"
+
+2. **Duplicate expenses insight**
+   insight: "Consolidate all duplicate expenses. You have {duplicate_count} duplicate expense(s) detected." Then list the specific duplicates from the pre-calculated detail above.
+   suggestion: Advise the user to merge or remove duplicate entries to avoid double-counting or double-paying.
+   category: "Duplicates"
+
+3. **Discretionary spend insight**
+   insight: "Consider that 30% of your income is the target for discretionary spend. You are currently at {discretionary_pct:.1f}% (£{discretionary_total:.2f}) — please review."
+   suggestion: Advise the user on how to reduce discretionary spend toward the 30% target.
+   category: "Discretionary"
+
+4. **High priority expense insight**
+   Identify the single highest non-essential or non-housing expense from the data and advise the user to prioritise reviewing or reducing it.
+   category: "Priority Expenses"
+
+**Response Format — VALID JSON ONLY, matching this exact structure:**
+{{
+    "summary": "1-2 sentence overview of the user's spending situation using the pre-calculated figures. ALL amounts must use £.",
     "insights": [
         {{
-            "insight": "Observation about the user's spending habit with £ for amounts.",
-            "suggestion": "A concrete action the user can take with £ for amounts.",
-            "category": "Spending Category"
+            "insight": "Observation using pre-calculated figures. Use £ for amounts.",
+            "suggestion": "Specific action the user can take. Use £ for amounts.",
+            "category": "Category name"
         }}
     ]
 }}
 
-**CRITICAL CHECK:** Before submitting, verify every monetary value has the £ symbol.
+**RULES:**
+- Output exactly 4 insight objects in the order listed above.
+- Use the pre-calculated figures EXACTLY as provided — do not round or change them.
+- ALL monetary values must have the £ symbol.
+- Do not add text outside the JSON object.
 
-Now, analyze the user's data and provide your complete JSON response.
+Now generate the JSON response.
 """
     return [{"role": "user", "content": prompt}]
 
 def build_budget_optimization_prompt(analysis_data: dict) -> list:
     summary_text = json.dumps(analysis_data.get('financial_summary', {}), default=str)
-    
+
     analysis_breakdown = f"""
 --- 50/30/20 Budget Rule Analysis (PRE-CALCULATED IN PYTHON) ---
 Total Income: £{analysis_data.get('total_income', 0.00):.2f}
@@ -123,7 +254,7 @@ Total Commitments: £{analysis_data.get('total_commitments', 0.00):.2f}
 """
     
     prompt = f"""
-You are an expert financial analyst named Reho, specializing in the 50/30/20 budget rule. Your task is to provide a structured optimization report.
+You are an expert financial analyst named Reho, specialising in the 50/30/20 budget rule. Your task is to provide a structured optimisation report.
 
 **MANDATORY CURRENCY RULE:** ALL monetary values in your response MUST use British Pounds (£). Every single amount must have the £ symbol. This is for a UK client.
 
@@ -134,51 +265,57 @@ You are an expert financial analyst named Reho, specializing in the 50/30/20 bud
 {analysis_breakdown}
 
 **Instructions:**
-1. **START WITH THE 50/30/20 RULE EXPLANATION:**
-   - In your 'summary', explicitly explain the rule: "The 50/30/20 rule is a simple budgeting guideline that helps you manage your money by dividing your after-tax income into 3 categories: Needs (50%), Wants (30%), and Savings (20%)."
-   - Then, immediately compare their ACTUAL percentages to these targets using £ for all amounts based strictly on the PRE-CALCULATED DATA above.
+1. **SUMMARY — MUST contain this exact sentence to open:**
+   "The 50/30/20 rule is a simple budgeting guideline that helps you manage your money by dividing your after-tax income into 3 categories: Needs (50%), Wants (30%), and Savings (20%). Your savings can be used to pay off debt faster or build an emergency or transition fund."
+   Then immediately compare their ACTUAL percentages to these targets using the PRE-CALCULATED DATA above. Use £ for all amounts.
 
-2. **Provide Strategic Insights:** Generate 3 to 5 specific, actionable insights.
-   - **If Essentials > 50%:** Do not just say "cut costs." Be specific. Suggest shopping around for insurance, switching energy suppliers, or refinancing specific loans found in their data.
-   - **If they are FAR OFF (e.g., Needs > 60%):** Do not demand immediate perfection. Provide a **"Transitional Budget"** plan in one of the insights. Suggest a "Phase 1" target (e.g., 60% Needs), then "Phase 2" (55%), then "Phase 3" (50%). Use £ for all amounts.
-   - **Income vs. Cuts:** If their costs are already lean, suggest increasing income (upskilling, side hustles) rather than just cutting wants.
-   - **Saving:** If Savings < 20%, suggest specific methods like automating transfers or using round-up apps. Use £ for all amounts.
+2. **INSIGHTS — Output EXACTLY 4 insights in this order:**
 
-3. **Format Your Response as a VALID JSON object.** The JSON must match this exact structure:
+   - **Insight 1 — Categorise:** Tell the user to categorise each expense into Essential, Discretionary, and Savings, calculating the total amount and percentage of income spent in each category. Use the pre-calculated figures.
+
+   - **Insight 2 — Compare:** Compare the user's current spending against the 50/30/20 rule targets using the exact pre-calculated percentages and £ amounts.
+
+   - **Insight 3 — Problem Areas:** Identify specific areas of overspending or problem areas based on the data. If Essentials > 50%, suggest specific actions (insurance, energy switching, loan refinancing). If far off, provide a Transitional Budget: Phase 1, Phase 2, Phase 3 targets.
+
+   - **Insight 4 — Action Steps:** Suggest specific adjustments to move closer to the 50/30/20 rule in exactly 3 steps. If savings < 20%, suggest automating transfers or round-up apps. If costs are lean, suggest income growth (upskilling, side hustles).
+
+3. **Format as a VALID JSON object matching this exact structure:**
 {{
-    "summary": "Explain 50/30/20 here and compare their actuals using £ for all amounts.",
+    "summary": "50/30/20 explanation + savings sentence + actual vs target comparison using £.",
     "insights": [
         {{
-            "insight": "Observation (e.g., 'Essentials are at 70%') with £ for amounts.",
-            "suggestion": "Specific advice (e.g., 'Transitional Plan: Phase 1... or Shop for cheaper energy') with £ for amounts.",
+            "insight": "Observation with £ for amounts.",
+            "suggestion": "Specific advice with £ for amounts.",
             "category": "Budget Category"
         }}
     ]
 }}
 
-**CRITICAL CHECK:** Before submitting, verify every monetary value has the £ symbol.
+**CRITICAL CHECK:** Verify every monetary value has the £ symbol before submitting.
 
-Now, analyze the user's data and provide your complete JSON response.
+Now analyse the user's data and provide your complete JSON response.
 """
     return [{"role": "user", "content": prompt}]
 
 def build_debt_optimization_prompt(financial_summary: dict) -> list:
     debts = financial_summary.get('debts', [])
-    smallest_debt_name, smallest_debt_amount = "your smallest debt", 0
-    highest_rate_name, highest_rate_amount = "your highest interest debt", 0
-    consolidation_str = "existing"
-    
+    smallest_debt_name   = "your smallest debt"
+    smallest_debt_amount = 0
+    highest_rate_name    = "your highest interest debt"
+    highest_rate_amount  = 0
+    consolidation_str    = "existing"
+
     if debts:
         active_debts = [d for d in debts if float(d.get('amount', 0)) > 0]
         if active_debts:
             smallest = min(active_debts, key=lambda d: float(d.get('amount', 0)))
-            smallest_debt_name = smallest.get('name', 'Smallest Debt')
+            smallest_debt_name   = smallest.get('name', 'Smallest Debt')
             smallest_debt_amount = float(smallest.get('amount', 0))
-            
+
             highest = max(active_debts, key=lambda d: float(d.get('interestRate', 0)))
-            highest_rate_name = highest.get('name', 'Highest Rate Debt')
+            highest_rate_name   = highest.get('name', 'Highest Rate Debt')
             highest_rate_amount = float(highest.get('amount', 0))
-            
+
             debt_names = [d.get('name', 'debt') for d in active_debts]
             if len(debt_names) > 2:
                 consolidation_str = ", ".join(debt_names[:-1]) + ", and " + debt_names[-1]
@@ -187,11 +324,10 @@ def build_debt_optimization_prompt(financial_summary: dict) -> list:
             else:
                 consolidation_str = debt_names[0]
 
-    total_income = sum(i.get('amount', 0) for i in financial_summary.get('incomes', []))
-    total_expenses = sum(e.get('amount', 0) for e in financial_summary.get('expenses', []))
+    total_income       = sum(i.get('amount', 0) for i in financial_summary.get('incomes', []))
+    total_expenses     = sum(e.get('amount', 0) for e in financial_summary.get('expenses', []))
     total_debt_payments = sum(d.get('monthlyPayment', 0) for d in financial_summary.get('debts', []))
-    disposable_income = max(0, total_income - total_expenses - total_debt_payments)
-    
+    disposable_income  = max(0, total_income - total_expenses - total_debt_payments)
     prompt = f"""
 You are a strict JSON formatter. Output EXACTLY the following JSON object. DO NOT rewrite, DO NOT add advice, DO NOT change a single character of the text. Just echo this exact JSON:
 
@@ -220,9 +356,9 @@ You are a strict JSON formatter. Output EXACTLY the following JSON object. DO NO
 
 def build_anomaly_detection_prompt(financial_summary: dict) -> list:
     summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
-    
+
     prompt = f"""
-You are a financial risk assessment AI. Your only task is to analyze the following user financial summary and determine if there are any significant "red flags" or anomalies that might indicate financial distress.
+You are a financial risk assessment AI. Your only task is to analyse the following user financial summary and determine if there are any significant "red flags" or anomalies that might indicate financial distress.
 
 **MANDATORY CURRENCY RULE:** ALL monetary values in your response MUST use British Pounds (£). This is for a UK client.
 
@@ -230,7 +366,7 @@ You are a financial risk assessment AI. Your only task is to analyze the followi
 {summary_text}
 
 **Instructions:**
-1. Analyze the data for potential issues such as:
+1. Analyse the data for potential issues such as:
    - Expenses are very high compared to income.
    - Debt payments are a very large percentage of income (use "Capital Loss" terminology).
    - No savings or budget defined.
@@ -251,14 +387,14 @@ You are a financial risk assessment AI. Your only task is to analyze the followi
 
 **Your final response MUST be a VALID JSON object.**
 
-Now, analyze the user's data and provide your JSON response.
+Now, analyse the user's data and provide your JSON response.
 """
     return [{"role": "user", "content": prompt}]
 
 def build_peer_comparison_prompt(financial_summary: dict) -> list:
-    user_name = financial_summary.get('name', 'there')
+    user_name    = financial_summary.get('name', 'there')
     summary_text = ", ".join([f"{k}: {v}" for k, v in financial_summary.items()])
-    
+
     prompt = f"""
 You are an expert financial analyst. Your task is to generate a single, plausible Peer Comparison statement for a user named {user_name} based on their financial summary.
 
@@ -268,12 +404,9 @@ You are an expert financial analyst. Your task is to generate a single, plausibl
 {summary_text}
 
 **Instructions:**
-1. Analyze their spending and income patterns, focusing on common discretionary categories like 'shopping', 'entertainment', or 'food'.
-
-2. Generate a statement that compares the user's behavior to their 'age/income group'. This comparison should be a single, engaging sentence.
-
-3. The statement should include a specific category and a plausible percentage (e.g., "User spends 15% more on entertainment...", or "User spends 5% less on housing..."). If amounts are mentioned, use £.
-
+1. Analyse their spending and income patterns, focusing on common discretionary categories like 'shopping', 'entertainment', or 'food'.
+2. Generate a statement comparing the user's behaviour to their 'age/income group'. This should be a single, engaging sentence.
+3. Include a specific category and a plausible percentage. If amounts are mentioned, use £.
 4. Format your response as a simple JSON object:
 {{"comparison": "Your single peer comparison sentence goes here (with £ if amounts mentioned)."}}
 
@@ -283,88 +416,51 @@ Now, generate the JSON response.
 """
     return [{"role": "user", "content": prompt}]
 
-def build_savings_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
-    user_name = financial_summary.get('name', 'there')
-    summary_text = json.dumps(financial_summary, default=str)
-    calc_text = json.dumps(calculator_data, default=str)
-    has_debt = len(financial_summary.get("debts", [])) > 0
-    
-    prompt = f"""
-You are Reho, an AI financial coach. A user named {user_name} has just run a SAVINGS CALCULATOR (Goal Calculator).
-
-**MANDATORY CURRENCY RULE:** ALL monetary values in your response MUST use British Pounds (£). Every single amount must have the £ symbol. This is for a UK client.
-
-**User's Current Financial Context (Use this for relevance):**
-{summary_text}
-
-**User's New Calculation Inputs:**
-{calc_text}
-
-**User Has Active Debts:** {has_debt}
-
-**CLIENT INSTRUCTION (CRITICAL):**
-- **If the user has ANY active debts ({has_debt} = True):** Ignore the savings goal for a moment. You MUST suggest paying the debt first. Use the phrase **"Capital Loss"** instead of "Interest Rate". Explain that debt causes a Capital Loss which outweighs any savings interest they might earn. Frame it as: "Before focusing on savings, consider that you're losing £[X] per month on Capital Loss from your debts. Clearing these first will save you more money than any savings account could earn."
-
-- **If the user has NO debts ({has_debt} = False):** Encourage them to achieve the savings goal and mention the power of compound interest. Suggest increasing savings by an average of 3% each year to beat inflation.
-
-**CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip for the user.
-- The tip should connect the calculator's goal to their existing financial data.
-- ALL amounts must use £.
-
-Format your response as a simple JSON object:
-{{"tip": "Your single, concise, and personalized financial tip goes here (with £ for all amounts)."}}
-
-**CRITICAL CHECK:** Before submitting, verify every monetary value has the £ symbol.
-
-Now, generate the JSON response.
-"""
-    return [{"role": "user", "content": prompt}]
 
 def build_loan_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
-    user_name = financial_summary.get('name', 'there')
-    total_income = sum(i.get('amount', 0) for i in financial_summary.get('incomes', []))
-    total_expenses = sum(e.get('amount', 0) for e in financial_summary.get('expenses', []))
-    current_debt_payments = sum(d.get('monthlyPayment', 0) for d in financial_summary.get('debts', []))
-    current_debts_total = sum(d.get('amount', 0) for d in financial_summary.get('debts', []))
-    disposable_income = max(0, total_income - total_expenses - current_debt_payments)
+    user_name              = financial_summary.get('name', 'there')
+    total_income           = sum(i.get('amount', 0) for i in financial_summary.get('incomes', []))
+    total_expenses         = sum(e.get('amount', 0) for e in financial_summary.get('expenses', []))
+    current_debt_payments  = sum(d.get('monthlyPayment', 0) for d in financial_summary.get('debts', []))
+    current_debts_total    = sum(d.get('amount', 0) for d in financial_summary.get('debts', []))
+    disposable_income      = max(0, total_income - total_expenses - current_debt_payments)
+    new_principal    = float(calculator_data.get('principal', 0))
+    annual_interest  = float(calculator_data.get('annualInterestRate', 0))
+    years            = float(calculator_data.get('loanTermYears', 1))
+    monthly_rate  = (annual_interest / 100) / 12
+    num_payments  = years * 12
     
-    new_principal = float(calculator_data.get('principal', 0))
-    annual_interest = float(calculator_data.get('annualInterestRate', 0))
-    years = float(calculator_data.get('loanTermYears', 1))
-    
-    monthly_rate = (annual_interest / 100) / 12
-    num_payments = years * 12
     if monthly_rate > 0 and num_payments > 0:
         est_monthly_payment = new_principal * (monthly_rate * (1 + monthly_rate)**num_payments) / ((1 + monthly_rate)**num_payments - 1)
     else:
         est_monthly_payment = (new_principal / num_payments) if num_payments > 0 else 0
-        
+
     est_total_interest = max(0, (est_monthly_payment * num_payments) - new_principal)
-    new_total_debt = current_debts_total + new_principal
-    new_dti = ((current_debt_payments + est_monthly_payment) / total_income * 100) if total_income > 0 else 0
-    
+    new_total_debt     = current_debts_total + new_principal
+    new_dti            = ((current_debt_payments + est_monthly_payment) / total_income * 100) if total_income > 0 else 0
+
     prompt = f"""
 You are Reho, an AI financial coach. A user named {user_name} has just run a LOAN REPAYMENT CALCULATOR.
 
 **MANDATORY CURRENCY RULE:** ALL monetary values in your response MUST use British Pounds (£). Every single amount must have the £ symbol. This is for a UK client.
 
-**MANDATORY TERMINOLOGY RULE:** Use **"Capital Loss"** or **"Money Lost"** instead of "interest" when discussing the cost of the loan.
+**MANDATORY TERMINOLOGY RULE:** Use "Capital Loss" or "Money Lost" instead of "interest" when discussing the cost of the loan.
 
-**CRITICAL TASK:** Generate a specific Financial Tip analyzing this new loan and its impact on the user's finances.
+**CRITICAL TASK:** Generate a specific Financial Tip analysing this new loan and its impact on the user's finances.
 
-**FORMATTING RULES (Strictly Follow This Structure):**
-1. **Currency:** All amounts MUST be in British Pounds (£). Every single amount needs the £ symbol.
-2. **Structure:** Use a clean bulleted list (using hyphens "-") with line breaks.
-3. **Content Requirements:** Build exactly on the exact pre-calculated figures provided below. Do not do any math yourself.
+**FORMATTING RULES:**
+1. All amounts MUST be in British Pounds (£).
+2. Use a clean bulleted list (hyphens "-") with line breaks.
+3. Use ONLY the exact pre-calculated figures below. Do not do any maths yourself.
 
-**Use exactly these pre-calculated figures in your output:**
+**Pre-calculated figures:**
 - New Loan Amount: £{new_principal:.2f}
 - New Total Debt Load: Increases from £{current_debts_total:.2f} to £{new_total_debt:.2f}
 - Impact on Disposable Income: Reduces your £{disposable_income:.2f} monthly surplus by approx £{est_monthly_payment:.2f}
 - New Debt-to-Income Ratio: Increases to {new_dti:.1f}%
 - Total Capital Loss (Money Lost): You will lose approx £{est_total_interest:.2f} over {years} years on this loan
 
-**Example Output Format:**
+**Required output format:**
 "Here is the impact of this new loan:
 
 - New Loan Amount: £{new_principal:.2f}
@@ -377,7 +473,7 @@ You are Reho, an AI financial coach. A user named {user_name} has just run a LOA
 Format your response as a simple JSON object:
 {{"tip": "Your formatted text string here with £ for all amounts..."}}
 
-**CRITICAL CHECK:** Before submitting, verify every monetary value has the £ symbol and you're using "Capital Loss" terminology.
+**CRITICAL CHECK:** Verify every monetary value has the £ symbol and you're using "Capital Loss" terminology.
 
 Now, generate the JSON response.
 """
@@ -386,58 +482,82 @@ Now, generate the JSON response.
 def build_inflation_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
     user_name = financial_summary.get('name', 'there')
     summary_text = json.dumps(financial_summary, default=str)
-    calc_text = json.dumps(calculator_data, default=str)
-    initial_amount = float(calculator_data.get('initialAmount', 1000))
+    initial_amount   = float(calculator_data.get('initialAmount', 1000))
     annual_inflation = float(calculator_data.get('annualInflationRate', 3.0))
-    years = int(calculator_data.get('yearsToProject', 10))
-    future_value = initial_amount * ((1 + annual_inflation/100) ** years)
-    
+    years            = int(calculator_data.get('yearsToProject', 10))
+    future_value     = initial_amount * ((1 + annual_inflation / 100) ** years)
+    saving_goals = financial_summary.get('saving_goals', [])
+    if saving_goals:
+        first_goal   = saving_goals[0]
+        goal_name    = first_goal.get('name', 'your savings goal')
+        goal_target  = float(first_goal.get('totalAmount', 0))
+        goal_monthly = float(first_goal.get('monthlyTarget', 0))
+        goal_sentence = (
+            f'Given your savings goal for "{goal_name}" with a target of £{goal_target:.2f} '
+            f'and monthly contribution of £{goal_monthly:.2f}, inflation will erode the real '
+            f'value of your savings over time. To combat erosion of purchasing power:'
+        )
+    else:
+        goal_sentence = (
+            "Given your current savings plan, inflation will erode the real value of your "
+            "savings over time. To combat erosion of purchasing power:"
+        )
+
     prompt = f"""
-You are Reho, an AI financial coach. A user named {user_name} has just run a FUTURE VALUE/INFLATION CALCULATOR.
+You are Reho, an AI financial coach. A user named {user_name} has just run a FUTURE VALUE / INFLATION CALCULATOR.
 
-**MANDATORY CURRENCY RULE:** ALL monetary values in your response MUST use British Pounds (£). Every single amount must have the £ symbol. This is for a UK client.
+**MANDATORY CURRENCY RULE:** ALL monetary values MUST use British Pounds (£). Every single amount must have the £ symbol. This is for a UK client.
 
-**User's Current Financial Context (Use this for relevance):**
+**User's Financial Context:**
 {summary_text}
 
-**User's Calculation Inputs:**
+**PRE-CALCULATED FIGURES — copy these EXACTLY, do NOT recalculate:**
 - Initial Amount: £{initial_amount:.2f}
 - Years to Project: {years}
-Full Data: {calc_text}
+- Annual Inflation Rate: {annual_inflation}%
+- Future Value: £{future_value:.2f}
 
-**CLIENT INSTRUCTION (CRITICAL):**
-1. You MUST provide a concrete example exactly like this using the PRE-CALCULATED math: "Data as an example: What costs you £{initial_amount:.2f} today will cost approx £{future_value:.2f} after {years} years due to {annual_inflation}% inflation."
-2. You MUST provide this specific suggestion: "To combat this erosion of purchasing power, increase your savings by an average of 3% each year."
-3. **MANDATORY:** You MUST add the source at the end of the tip exactly like this: "Source: worldbank.org".
+**MANDATORY OUTPUT STRUCTURE — your tip MUST follow this order EXACTLY:**
 
-**CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip focused on the impact of inflation on the user's savings goals.
-- The tip should connect the inflation rate to their existing 'Savings Goals' or 'Income'.
-- ALL amounts must use £.
+Sentence 1 (copy verbatim):
+"This is {user_name}. What costs you £{initial_amount:.2f} today will cost approximately £{future_value:.2f} after {years} years with assumed inflation {annual_inflation}% each year."
+
+Sentence 2 (copy verbatim):
+"{goal_sentence}"
+
+Then provide EXACTLY 2 bullet points (use "-"):
+- "Increase your savings each year by the rate of inflation each year"
+- "Invest in assets paying a higher rate of interest than the inflation rate. Please be aware that tax you pay may affect your real rate of return over time"
+
+Final line (copy verbatim):
+"Our inflation rate assumption comes from worldbank.org"
 
 Format your response as a simple JSON object:
-{{"tip": "Your single, concise, and personalized financial tip goes here with £ for all amounts. Source: worldbank.org"}}
+{{"tip": "The complete structured tip as described above, with £ for all amounts."}}
 
-**CRITICAL CHECK:** Before submitting, verify every monetary value has the £ symbol.
+**STRICT RULES:**
+- Copy all pre-calculated figures and required sentences EXACTLY as shown. Do not round or change them.
+- ALL monetary values must have the £ symbol.
+- Do not add any extra keys or text outside the JSON object.
+- The worldbank.org line must be the very last line.
 
-Now, generate the JSON response.
+Now generate the JSON response.
 """
     return [{"role": "user", "content": prompt}]
 
 def build_historical_tip_prompt(user_id: str, calculator_data: dict, financial_summary: dict) -> list:
-    user_name = financial_summary.get('name', 'there')
+    user_name    = financial_summary.get('name', 'there')
     summary_text = json.dumps(financial_summary, default=str)
-    calc_text = json.dumps(calculator_data, default=str)
-    
+    calc_text    = json.dumps(calculator_data, default=str)
     from_year = calculator_data.get('fromYear', '1970')
-    to_year = calculator_data.get('toYear', '2025')
-    amount = float(calculator_data.get('amount', 100))
-    
+    to_year   = calculator_data.get('toYear', '2025')
+    amount    = float(calculator_data.get('amount', 100))
     prompt = f"""
 You are Reho, an AI financial coach. A user named {user_name} has just run a HISTORICAL INFLATION CALCULATOR.
 
 **MANDATORY CURRENCY RULE:** ALL monetary values in your response MUST use British Pounds (£). Every single amount must have the £ symbol. This is for a UK client.
 
-**User's Current Financial Context (Use this for relevance):**
+**User's Current Financial Context:**
 {summary_text}
 
 **User's Calculation Inputs:**
@@ -449,13 +569,13 @@ Full Data: {calc_text}
 **CRITICAL TASK:** Generate ONE single, highly contextual, and actionable Financial Tip focused on the change in buying power over time.
 
 **MANDATORY REQUIREMENTS:**
-1. The tip MUST explicitly state the period in text: "inflation from {from_year} – {to_year}" (or use the actual years provided).
-2. The tip MUST warn about the erosion of funds and purchasing power. Use terms like "Capital Loss" to describe how inflation erodes value.
-3. The tip MUST explain what £{amount:.2f} from {from_year} has lost its buying power in {to_year} terms. (Do not attempt to calculate exact historical exchange multipliers, just explain the concept).
-4. The tip MUST add the source at the very end exactly like this: "Source: worldbank.org".
+1. The tip MUST explicitly state the period: "inflation from {from_year} to {to_year}".
+2. The tip MUST warn about erosion of purchasing power using the term "Capital Loss".
+3. The tip MUST reference that £{amount:.2f} from {from_year} has lost real buying power by {to_year} (explain the concept — do not attempt to calculate exact historical multipliers).
+4. The tip MUST end with EXACTLY this line: "Source: worldbank.org"
 
 Format your response as a simple JSON object:
-{{"tip": "Your single financial tip including the period text with £ for all amounts, mentioning Capital Loss from inflation. Source: worldbank.org"}}
+{{"tip": "Your single financial tip including the period, Capital Loss terminology, the £{amount:.2f} reference, and Source: worldbank.org at the end."}}
 
 **CRITICAL CHECK:** Before submitting, verify every monetary value has the £ symbol.
 

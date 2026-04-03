@@ -1,5 +1,5 @@
 import jwt
-from fastapi import Depends, HTTPException, status, Header
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.config import settings
 
@@ -11,7 +11,10 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         user_id = payload.get("user_id") or payload.get("id")
         if not user_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User identifier not found in token")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User identifier not found in token"
+            )
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Annotated
 from datetime import datetime
 
 class RenameConversationRequest(BaseModel):
@@ -16,4 +16,4 @@ class WebSocketAuthRequest(BaseModel):
 class AdminAnalysisRequest(BaseModel):
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    user_ids: Optional[List[str]] = Field(None, min_items=1)
+    user_ids: Optional[Annotated[List[str], Field(min_length=1)]] = None
