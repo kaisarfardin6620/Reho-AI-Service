@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from app.utils.security import require_admin_user
 from app.services import admin_service
 from app.models.admin import AdminUserAIDashboard 
+from loguru import logger
 
 router = APIRouter(
     prefix="/admin",
@@ -20,7 +21,7 @@ async def get_single_user_admin_data(user_id: str):
             detail=str(e)
         )
     except Exception as e:
-        print(f"Error fetching admin dashboard for user {user_id}: {e}")
+        logger.error(f"Error fetching admin dashboard for user {user_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to compile the user's AI dashboard data."

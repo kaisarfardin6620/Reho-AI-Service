@@ -2,6 +2,8 @@ import json
 import asyncio
 from app.db import queries as db_queries
 from app.ai import prompt_builder
+from app.models.feedback import OptimizationResponse
+from pydantic import BaseModel
 from openai import AsyncOpenAI
 from app.core.config import settings
 from loguru import logger
@@ -11,6 +13,8 @@ from typing import List, Dict, Optional
 
 aclient = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
+class TipResponse(BaseModel):
+    tip: str
 
 @retry_openai(max_retries=3)
 @track_openai_metrics()
@@ -23,14 +27,14 @@ async def _get_report_from_ai_and_save(user_id: str, report_type: str, prompt_bu
             if report_type == 'expense' and not financial_summary.get("expenses"): return False
             if report_type == 'debt' and not financial_summary.get("debts"): return False
             optimization_prompt = prompt_builder_func(financial_summary)
-        
-        response = await aclient.chat.completions.create(
+
+        response = await aclient.beta.chat.completions.parse(
             model="gpt-4o",
             messages=optimization_prompt,
-            response_format={"type": "json_object"} 
+            response_format=OptimizationResponse 
         )
         
-        report = json.loads(response.choices[0].message.content)
+        report = response.choices[0].message.parsed.model_dump()
         await db_queries.save_optimization_report(user_id, report_type, report)
         
         logger.info(f"Successfully generated and saved {report_type} report for user {user_id}.")
@@ -42,13 +46,13 @@ async def _get_report_from_ai_and_save(user_id: str, report_type: str, prompt_bu
 
 
 def _map_to_50_30_20(financial_summary: dict) -> dict:
-    total_income = sum(i.get("amount", 0) for i in financial_summary.get("incomes", []))
+    total_income = sum(i.get("amount", 0) for i in financial_summary.get("incomes",[]))
     
     actual_essential = 0.0
     actual_discretionary = 0.0
     actual_savings = 0.0
     
-    all_commitments = financial_summary.get("expenses", []) + financial_summary.get("debts", [])
+    all_commitments = financial_summary.get("expenses", []) + financial_summary.get("debts",[])
     
     for item in all_commitments:
         amount = item.get('amount') or item.get('monthlyPayment', 0)
@@ -62,9 +66,9 @@ def _map_to_50_30_20(financial_summary: dict) -> dict:
             actual_savings += amount
         else:
             name = item.get('name', '').lower()
-            if any(keyword in name for keyword in ['rent', 'mortgage', 'utility', 'bill', 'grocery', 'insurance', 'loan', 'debt', 'payment']):
+            if any(keyword in name for keyword in['rent', 'mortgage', 'utility', 'bill', 'grocery', 'insurance', 'loan', 'debt', 'payment']):
                 actual_essential += amount
-            elif any(keyword in name for keyword in ['netflix', 'spotify', 'dining', 'entertainment', 'shopping', 'hobby', 'travel']):
+            elif any(keyword in name for keyword in['netflix', 'spotify', 'dining', 'entertainment', 'shopping', 'hobby', 'travel']):
                 actual_discretionary += amount
             else:
                 if item.get('monthlyPayment') is not None:
@@ -72,7 +76,7 @@ def _map_to_50_30_20(financial_summary: dict) -> dict:
                 else:
                     actual_discretionary += amount
         
-    actual_savings += sum(s.get('monthlyTarget', 0) for s in financial_summary.get('saving_goals', []))
+    actual_savings += sum(s.get('monthlyTarget', 0) for s in financial_summary.get('saving_goals',[]))
     
     total_commitments = actual_essential + actual_discretionary + actual_savings
 
@@ -104,10 +108,12 @@ async def _get_single_calculator_tip(user_id: str, builder_func, mock_data_type:
             
             prompt = builder_func(user_id, mock_data, financial_summary)
             
-        response = await aclient.chat.completions.create(
-            model="gpt-4o", messages=prompt, response_format={"type": "json_object"}
+        response = await aclient.beta.chat.completions.parse(
+            model="gpt-4o", 
+            messages=prompt, 
+            response_format=TipResponse
         )
-        tip_data = json.loads(response.choices[0].message.content)
+        tip_data = response.choices[0].message.parsed.model_dump()
         return tip_data.get("tip", "Could not generate a specialized tip for this calculator.")
     
     except Exception as e:
@@ -141,7 +147,7 @@ async def get_expense_optimization_feedback(user_id: str) -> dict:
     
     return {
         "summary": "Report could not be generated. Please ensure you have added expenses.",
-        "insights": []
+        "insights":[]
     }
 
 
@@ -181,7 +187,7 @@ async def get_budget_optimization_feedback(user_id: str) -> dict:
 
     return {
         "summary": "Report not yet generated. Please ensure you have set up income and budgets.",
-        "insights": []
+        "insights":[]
     }    
     
 
@@ -198,5 +204,5 @@ async def get_debt_optimization_feedback(user_id: str) -> dict:
     
     return {
         "summary": "Report could not be generated. Please ensure you have added debts.",
-        "insights": []
+        "insights":[]
     }

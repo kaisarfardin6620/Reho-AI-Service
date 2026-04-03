@@ -1,17 +1,25 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.utils.logging import setup_logging
 from app.utils.metrics import track_request_metrics
+from app.db.client import client, redis_client
+from loguru import logger
 
-try:
-    from app.routers import chat, admin, calculator, feedback
-except ImportError:
-    from app import chat, admin, calculator, feedback
+from app.routers import chat, admin, calculator, feedback
 
 setup_logging()
 
-app = FastAPI(title="Reho AI Finance API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Starting up Reho AI Finance API...")
+    yield
+    logger.info("Shutting down... Closing database connections.")
+    client.close()
+    await redis_client.aclose()
+
+app = FastAPI(title="Reho AI Finance API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -10,7 +10,7 @@ def _serialize_mongo_doc(obj):
     if obj is None:
         return None
     if isinstance(obj, list):
-        return [_serialize_mongo_doc(item) for item in obj]
+        return[_serialize_mongo_doc(item) for item in obj]
     if isinstance(obj, dict):
         return {k: _serialize_mongo_doc(v) for k, v in obj.items()}
     if isinstance(obj, ObjectId):
@@ -65,7 +65,7 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> 
     )
     
     user, incomes, expenses, budgets, debts, saving_goals, subscription = (
-        r if not isinstance(r, Exception) else [] for r in results
+        r if not isinstance(r, Exception) else[] for r in results
     )
     if isinstance(user, list) or isinstance(user, Exception): user = None
 
@@ -75,7 +75,7 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> 
             b_id = str(b.get("_id"))
             budget_map[b_id] = b.get("category") or b.get("name") or "Uncategorized"
 
-    formatted_expenses = []
+    formatted_expenses =[]
     if expenses:
         for e in expenses:
             b_id = str(e.get("budgetId")) if e.get("budgetId") else None
@@ -88,7 +88,7 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> 
                 "budgetCategory": category_name 
             })
 
-    formatted_debts = []
+    formatted_debts =[]
     if debts:
         for d in debts:
             stored_rate = d.get("userInterestRate")
@@ -106,11 +106,11 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> 
 
     summary = {
         "name": user.get("name", "there") if user else "there",
-        "incomes": [{"name": i.get("name"), "amount": i.get("amount"), "frequency": i.get("frequency")} for i in incomes],
+        "incomes":[{"name": i.get("name"), "amount": i.get("amount"), "frequency": i.get("frequency")} for i in incomes],
         "expenses": formatted_expenses,
-        "budgets": [{"name": b.get("name"), "amount": b.get("amount"), "category": b.get("category")} for b in budgets],
+        "budgets":[{"name": b.get("name"), "amount": b.get("amount"), "category": b.get("category")} for b in budgets],
         "debts": formatted_debts,
-        "saving_goals": [{
+        "saving_goals":[{
             "name": sg.get("name"), 
             "totalAmount": sg.get("totalAmount"), 
             "monthlyTarget": sg.get("monthlyTarget"),
@@ -132,8 +132,8 @@ async def save_chat_message(user_id: str, conversation_id: str, role: str, messa
             "message": message,
             "timestamp": datetime.now(timezone.utc)
         })
-    except Exception:
-        pass 
+    except Exception as e:
+        logger.error(f"Failed to save chat message for user {user_id}: {e}")
 
 async def get_conversation_history(conversation_id: str, limit: int = 20) -> list:
     cursor = db.chat_history.find({"conversation_id": conversation_id}).sort("timestamp", -1).limit(limit)
@@ -177,7 +177,7 @@ async def get_latest_admin_alerts_for_user(user_id: str, limit: int = 5) -> list
         alerts = await cursor.to_list(length=limit)
         return _serialize_mongo_doc(alerts)
     except Exception:
-        return []
+        return[]
 
 async def save_calculator_tips(user_id: str, tips_data: dict):
     await db.calculator_tips.update_one(

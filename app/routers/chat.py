@@ -59,48 +59,56 @@ async def websocket_endpoint(websocket: WebSocket):
             
             await db_queries.save_chat_message(user_id, conversation_id, "assistant", welcome_message)
             
-            initial_history = [{"role": "assistant", "content": welcome_message}]
+            initial_history =[{"role": "assistant", "content": welcome_message}]
         
         personalized_system_prompt = prompt_builder.build_contextual_system_prompt(financial_summary)
         
-        messages_for_api = [{"role": "system", "content": personalized_system_prompt}, *initial_history]
+        messages_for_api =[{"role": "system", "content": personalized_system_prompt}, *initial_history]
 
         while True:
             raw_data = await websocket.receive_text()
             
             try:
-                user_data = json.loads(raw_data) 
-                user_message = user_data.get("message", "").strip() 
-            except json.JSONDecodeError:
-                logger.warning(f"Received non-JSON message from client: {raw_data}")
-                user_message = raw_data.strip()
-            
-            if not user_message:
-                continue
-            
-            await db_queries.save_chat_message(user_id, conversation_id, "user", user_message)
-            
-            messages_for_api.append({"role": "user", "content": user_message})
-            
-            if len(messages_for_api) > MAX_HISTORY_CONTEXT + 1:
-                context_window = [messages_for_api[0]] + messages_for_api[-MAX_HISTORY_CONTEXT:]
-            else:
-                context_window = messages_for_api
+                try:
+                    user_data = json.loads(raw_data) 
+                    user_message = user_data.get("message", "").strip() 
+                except json.JSONDecodeError:
+                    logger.warning(f"Received non-JSON message from client: {raw_data}")
+                    user_message = raw_data.strip()
+                
+                if not user_message:
+                    continue
+                
+                await db_queries.save_chat_message(user_id, conversation_id, "user", user_message)
+                
+                messages_for_api.append({"role": "user", "content": user_message})
+                
+                if len(messages_for_api) > MAX_HISTORY_CONTEXT + 1:
+                    context_window = [messages_for_api[0]] + messages_for_api[-MAX_HISTORY_CONTEXT:]
+                else:
+                    context_window = messages_for_api
 
-            full_reply = await get_openai_full_response(context_window)
+                full_reply = await get_openai_full_response(context_window)
+                
+                await websocket.send_json({"type": "full_response", "data": full_reply})
+                await websocket.send_json({"type": "status", "data": "done"})
+                
+                await db_queries.save_chat_message(user_id, conversation_id, "assistant", full_reply)
+                messages_for_api.append({"role": "assistant", "content": full_reply})
             
-            await websocket.send_json({"type": "full_response", "data": full_reply})
-            await websocket.send_json({"type": "status", "data": "done"})
-            
-            await db_queries.save_chat_message(user_id, conversation_id, "assistant", full_reply)
-            messages_for_api.append({"role": "assistant", "content": full_reply})
-
+            except Exception as inner_e:
+                logger.error(f"Error processing user message for {user_id}: {inner_e}")
+                await websocket.send_json({
+                    "type": "error", 
+                    "data": "Sorry, I encountered an error processing your request. Please try again."
+                })
+                
     except WebSocketDisconnect:
         logger.info(f"Client disconnected: {user_id}")
         remove_active_user(user_id)
 
     except Exception as e:
-        logger.exception(f"Unexpected error for user {user_id}: {e}")
+        logger.exception(f"Unexpected WebSocket error for user {user_id}: {e}")
         remove_active_user(user_id)
         try:
             await websocket.send_json({"error": f"Internal server error: {str(e)}"})
