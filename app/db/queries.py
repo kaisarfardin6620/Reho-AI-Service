@@ -31,8 +31,8 @@ def _safe_result(result, single: bool = False):
         return None if single else []
     return result
 
-async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> dict:
-    cache_key = f"user_summary:{user_id}"
+async def get_user_financial_summary(user_id: str, skip_cache: bool = False, time_frame: str = 'all_time') -> dict:
+    cache_key = f"user_summary:{user_id}:{time_frame}"
 
     if not skip_cache:
         cached_summary = await redis_client.get(cache_key)
@@ -44,24 +44,26 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> 
     except Exception:
         raise ValueError(f"Invalid user_id format provided: {user_id}")
 
-    now = datetime.now(timezone.utc)
-    start_of_month = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-
     general_query = {"userId": object_id, "isDeleted": False}
     
     income_query = dict(general_query)
-    income_query["$or"] = [
-        {"receiveDate": {"$gte": start_of_month}},
-        {"createdAt": {"$gte": start_of_month}},
-        {"date": {"$gte": start_of_month}}
-    ]
-
     expense_query = dict(general_query)
-    expense_query["$or"] = [
-        {"endDate": {"$gte": start_of_month}},
-        {"createdAt": {"$gte": start_of_month}},
-        {"date": {"$gte": start_of_month}}
-    ]
+    
+    if time_frame == 'current_month':
+        now = datetime.now(timezone.utc)
+        start_of_month = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+
+        income_query["$or"] = [
+            {"receiveDate": {"$gte": start_of_month}},
+            {"createdAt": {"$gte": start_of_month}},
+            {"date": {"$gte": start_of_month}}
+        ]
+
+        expense_query["$or"] = [
+            {"endDate": {"$gte": start_of_month}},
+            {"createdAt": {"$gte": start_of_month}},
+            {"date": {"$gte": start_of_month}}
+        ]
 
     user_task = db.users.find_one({"_id": object_id})
     income_task = db.incomes.find(income_query).to_list(length=None)

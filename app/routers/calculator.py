@@ -38,7 +38,7 @@ async def get_scheduled_calculator_tips(
 
     
     if latest_savings:
-        if "will be available" in cached_tips["savingsTip"] or "Please run" in cached_tips["savingsTip"]:
+        if "will be available" in cached_tips["savingsTip"] or "Please run" in cached_tips["savingsTip"] or "{" in cached_tips["savingsTip"]:
             t = feedback_service.generate_instant_tip_from_db(user_id, 'savings', latest_savings)
             ai_tasks.append(t)
             task_map[len(ai_tasks)-1] = "savingsTip"
