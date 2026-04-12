@@ -47,16 +47,25 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False) -> 
     now = datetime.now(timezone.utc)
     start_of_month = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
 
-    current_month_query = {
-        "userId": object_id,
-        "isDeleted": False,
-        "date": {"$gte": start_of_month}
-    }
-
     general_query = {"userId": object_id, "isDeleted": False}
+    
+    income_query = dict(general_query)
+    income_query["$or"] = [
+        {"receiveDate": {"$gte": start_of_month}},
+        {"createdAt": {"$gte": start_of_month}},
+        {"date": {"$gte": start_of_month}}
+    ]
+
+    expense_query = dict(general_query)
+    expense_query["$or"] = [
+        {"endDate": {"$gte": start_of_month}},
+        {"createdAt": {"$gte": start_of_month}},
+        {"date": {"$gte": start_of_month}}
+    ]
+
     user_task = db.users.find_one({"_id": object_id})
-    income_task = db.incomes.find(current_month_query).to_list(length=None)
-    expense_task = db.expenses.find(current_month_query).to_list(length=None)
+    income_task = db.incomes.find(income_query).to_list(length=None)
+    expense_task = db.expenses.find(expense_query).to_list(length=None)
     budget_task = db.budgets.find(general_query).to_list(length=None)
     debt_task = db.debts.find(general_query).to_list(length=None)
     saving_goal_task = db.savinggoals.find(general_query).to_list(length=None)

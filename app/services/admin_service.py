@@ -41,15 +41,15 @@ def _calculate_category_spend(expenses: List[Dict]) -> Dict[str, float]:
 
 
 async def get_single_user_admin_dashboard(user_id: str) -> AdminUserAIDashboard:
-    alerts_task = db_queries.get_latest_admin_alerts_for_user(user_id)
-    expense_task = db_queries.get_latest_optimization_report(user_id, "expense")
-    budget_task = db_queries.get_latest_optimization_report(user_id, "budget")
-    debt_task = db_queries.get_latest_optimization_report(user_id, "debt")
-    summary_task = db_queries.get_user_financial_summary(user_id)
+    alerts_task = asyncio.create_task(db_queries.get_latest_admin_alerts_for_user(user_id))
+    expense_task = asyncio.create_task(db_queries.get_latest_optimization_report(user_id, "expense"))
+    budget_task = asyncio.create_task(db_queries.get_latest_optimization_report(user_id, "budget"))
+    debt_task = asyncio.create_task(db_queries.get_latest_optimization_report(user_id, "debt"))
+    summary_task = asyncio.create_task(db_queries.get_user_financial_summary(user_id))
 
     financial_summary = await summary_task
 
-    peer_task = _run_peer_comparison_ai(financial_summary)
+    peer_task = asyncio.create_task(_run_peer_comparison_ai(financial_summary))
 
     results = await asyncio.gather(alerts_task, expense_task, budget_task, debt_task, peer_task)
 

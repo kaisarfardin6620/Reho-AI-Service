@@ -119,7 +119,7 @@ async def websocket_endpoint(websocket: WebSocket):
         if user_id:
             remove_active_user(user_id)
         try:
-            await websocket.send_json({"error": f"Internal server error: {str(e)}"})
+            await websocket.send_json({"error": "An unexpected error occurred."})
         except Exception:
             pass
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
