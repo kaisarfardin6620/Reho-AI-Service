@@ -67,7 +67,7 @@ async def get_single_user_admin_dashboard(user_id: str) -> AdminUserAIDashboard:
     total_income = sum(i.get("amount", 0) for i in financial_summary.get("incomes", []))
     total_payments = sum(d.get("monthlyPayment", 0) for d in financial_summary.get("debts", []))
 
-    missed_count = 0
+    missed_count = 0  # TODO:
     if total_income > 0 and total_payments > 0 and (total_payments / total_income) > 0.40:
         overall_status = "High Risk"
     elif total_payments > 0:

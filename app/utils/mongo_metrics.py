@@ -1,8 +1,10 @@
 from functools import wraps
 import time
-import logging
+import threading
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+_connection_count = 0
+_connection_lock = threading.Lock()
 
 def track_mongo_operation(collection: str, operation: str):
     def decorator(func):
@@ -22,17 +24,18 @@ def track_mongo_operation(collection: str, operation: str):
         return wrapper
     return decorator
 
-_connection_count = 0
-
 def increment_connections():
     global _connection_count
-    _connection_count += 1
-    logger.info(f"MongoDB connections: {_connection_count}")
+    with _connection_lock:
+        _connection_count += 1
+        logger.info(f"MongoDB connections: {_connection_count}")
 
 def decrement_connections():
     global _connection_count
-    _connection_count = max(0, _connection_count - 1)
-    logger.info(f"MongoDB connections: {_connection_count}")
+    with _connection_lock:
+        _connection_count = max(0, _connection_count - 1)
+        logger.info(f"MongoDB connections: {_connection_count}")
 
 def get_connection_count():
-    return _connection_count
+    with _connection_lock:
+        return _connection_count

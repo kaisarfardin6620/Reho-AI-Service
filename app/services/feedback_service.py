@@ -45,7 +45,7 @@ async def _get_report_from_ai_and_save(
         if report_type == 'budget' and analysis_data:
             optimization_prompt = prompt_builder_func(analysis_data)
         else:
-            financial_summary = await db_queries.get_user_financial_summary(user_id)
+            financial_summary = await db_queries.get_user_financial_summary(user_id, skip_cache=True)
             if report_type == 'expense' and not financial_summary.get("expenses"):
                 return False
             if report_type == 'debt' and not financial_summary.get("debts"):
@@ -70,23 +70,21 @@ async def _get_report_from_ai_and_save(
 
 
 def _map_to_50_30_20(financial_summary: dict) -> dict:
-    total_income = sum(i.get("amount", 0) for i in financial_summary.get("incomes", []))
+    total_income = sum(float(i.get("amount") or 0) for i in financial_summary.get("incomes", []))
 
     actual_essential = 0.0
     actual_discretionary = 0.0
     actual_savings = 0.0
 
-    all_commitments = financial_summary.get("expenses", []) + financial_summary.get("debts", [])
-
-    for item in all_commitments:
-        amount = item.get('amount') or item.get('monthlyPayment', 0)
+    for item in financial_summary.get("expenses", []):
+        amount = float(item.get('amount') or 0)
         category_type = str(item.get('budgetCategory', '')).strip().lower()
 
-        if category_type in ['essential', 'needs']:
+        if 'essential' in category_type or category_type == 'needs':
             actual_essential += amount
-        elif category_type in ['discretionary', 'wants']:
+        elif 'discretionary' in category_type or category_type == 'wants':
             actual_discretionary += amount
-        elif category_type == 'savings':
+        elif 'saving' in category_type:
             actual_savings += amount
         else:
             name = item.get('name', '').lower()
@@ -95,12 +93,13 @@ def _map_to_50_30_20(financial_summary: dict) -> dict:
             elif any(keyword in name for keyword in ['netflix', 'spotify', 'dining', 'entertainment', 'shopping', 'hobby', 'travel']):
                 actual_discretionary += amount
             else:
-                if item.get('monthlyPayment') is not None:
-                    actual_essential += amount
-                else:
-                    actual_discretionary += amount
+                actual_discretionary += amount
 
-    actual_savings += sum(s.get('monthlyTarget', 0) for s in financial_summary.get('saving_goals', []))
+    for item in financial_summary.get("debts", []):
+        monthly = float(item.get('monthlyPayment') or 0)
+        actual_essential += monthly
+
+    actual_savings += sum(float(s.get('monthlyTarget') or 0) for s in financial_summary.get('saving_goals', []))
 
     total_commitments = actual_essential + actual_discretionary + actual_savings
 
@@ -160,14 +159,11 @@ async def generate_instant_tip_from_db(user_id: str, tip_type: str, db_data: dic
     elif tip_type == 'loan':
         return await _get_single_calculator_tip(user_id, prompt_builder.build_loan_tip_prompt, 'loan', custom_data=db_data)
 
+    logger.warning(f"generate_instant_tip_from_db called with unsupported tip_type='{tip_type}' for user {user_id}")
     return "Tip type not supported."
 
 async def get_expense_optimization_feedback(user_id: str) -> OptimizationResponse:
-    report = await db_queries.get_latest_optimization_report(user_id, "expense")
-    if report:
-        return _dict_to_optimization_response(report)
-
-    logger.info(f"Expense report missing for {user_id}, generating on-demand.")
+    logger.info(f"Generating fresh expense optimization report for {user_id}.")
     success = await _get_report_from_ai_and_save(user_id, 'expense', prompt_builder.build_expense_optimization_prompt)
 
     if success:
@@ -179,13 +175,9 @@ async def get_expense_optimization_feedback(user_id: str) -> OptimizationRespons
 
 
 async def get_budget_optimization_feedback(user_id: str) -> OptimizationResponse:
-    report = await db_queries.get_latest_optimization_report(user_id, "budget")
-    if report:
-        return _dict_to_optimization_response(report)
-
-    logger.info(f"Budget report missing for {user_id}, generating on-demand.")
+    logger.info(f"Generating fresh budget optimization report for {user_id}.")
     try:
-        financial_summary = await db_queries.get_user_financial_summary(user_id)
+        financial_summary = await db_queries.get_user_financial_summary(user_id, skip_cache=True)
         analysis_map = _map_to_50_30_20(financial_summary)
 
         total_income = analysis_map["total_income"]
@@ -222,11 +214,7 @@ async def get_budget_optimization_feedback(user_id: str) -> OptimizationResponse
 
 
 async def get_debt_optimization_feedback(user_id: str) -> OptimizationResponse:
-    report = await db_queries.get_latest_optimization_report(user_id, "debt")
-    if report:
-        return _dict_to_optimization_response(report)
-
-    logger.info(f"Debt report missing for {user_id}, generating on-demand.")
+    logger.info(f"Generating fresh debt optimization report for {user_id}.")
     success = await _get_report_from_ai_and_save(user_id, 'debt', prompt_builder.build_debt_optimization_prompt)
 
     if success:

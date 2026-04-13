@@ -23,7 +23,13 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
 
 
 def get_user_id_from_token(payload: dict = Depends(verify_token)) -> str:
-    return payload.get("user_id") or payload.get("id")
+    user_id = payload.get("user_id") or payload.get("id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User identifier not found in token"
+        )
+    return user_id
 
 
 def verify_token_ws(token: str) -> str:

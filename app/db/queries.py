@@ -136,9 +136,10 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False, tim
         "subscription_status": subscription.get("status", "none") if subscription else "none"
     }
 
-    await redis_client.set(cache_key, json.dumps(summary), ex=300)
+    serialized_summary = _serialize_mongo_doc(summary)
+    await redis_client.set(cache_key, json.dumps(serialized_summary), ex=300)
 
-    return summary
+    return serialized_summary
 
 
 async def save_chat_message(user_id: str, conversation_id: str, role: str, message: str):
@@ -163,6 +164,9 @@ async def get_conversation_history(conversation_id: str, limit: int = 20) -> lis
         role = document["role"]
         if role == "bot":
             role = "assistant"
+        elif role not in ("user", "assistant", "system"):
+            logger.warning(f"Unknown role '{role}' in conversation history, skipping message.")
+            continue
         history.append({"role": role, "content": document["message"]})
     return history
 

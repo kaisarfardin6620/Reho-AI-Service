@@ -1,9 +1,7 @@
 from functools import wraps
 from typing import Callable, Set
-import logging
 import time
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 ACTIVE_USERS: Set[str] = set()
 
