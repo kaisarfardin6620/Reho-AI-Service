@@ -45,7 +45,7 @@ async def _get_report_from_ai_and_save(
         if report_type == 'budget' and analysis_data:
             optimization_prompt = prompt_builder_func(analysis_data)
         else:
-            financial_summary = await db_queries.get_user_financial_summary(user_id, skip_cache=True)
+            financial_summary = await db_queries.get_user_financial_summary(user_id, skip_cache=True, time_frame='current_month')
             if report_type == 'expense' and not financial_summary.get("expenses"):
                 return False
             if report_type == 'debt' and not financial_summary.get("debts"):
@@ -120,7 +120,7 @@ async def _get_single_calculator_tip(
     custom_data: Optional[dict] = None
 ) -> str:
     try:
-        financial_summary = await db_queries.get_user_financial_summary(user_id)
+        financial_summary = await db_queries.get_user_financial_summary(user_id, skip_cache=True, time_frame='current_month')
 
         if custom_data:
             prompt = builder_func(user_id, custom_data, financial_summary)
@@ -177,7 +177,7 @@ async def get_expense_optimization_feedback(user_id: str) -> OptimizationRespons
 async def get_budget_optimization_feedback(user_id: str) -> OptimizationResponse:
     logger.info(f"Generating fresh budget optimization report for {user_id}.")
     try:
-        financial_summary = await db_queries.get_user_financial_summary(user_id, skip_cache=True)
+        financial_summary = await db_queries.get_user_financial_summary(user_id, skip_cache=True, time_frame='current_month')
         analysis_map = _map_to_50_30_20(financial_summary)
 
         total_income = analysis_map["total_income"]
