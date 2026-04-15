@@ -53,15 +53,16 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False, tim
         now = datetime.now(timezone.utc)
         start_of_month = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
 
-        income_query["frequency"] = "monthly"
         income_query["$or"] = [
             {"receiveDate": {"$gte": start_of_month}},
             {"createdAt": {"$gte": start_of_month}},
             {"date": {"$gte": start_of_month}}
         ]
 
-        expense_query["frequency"] = "monthly"
-        expense_query["budgetId"] = {"$exists": True, "$ne": None}
+        expense_query["$or"] = [
+            {"createdAt": {"$gte": start_of_month}},
+            {"endDate": {"$gte": start_of_month}}
+        ]
 
     user_task = db.users.find_one({"_id": object_id})
     income_task = db.incomes.find(income_query).to_list(length=None)

@@ -4,3 +4,4 @@ __pycache__
 prompt.py
 logs
 debug_user_data.py
+user_data_export.json

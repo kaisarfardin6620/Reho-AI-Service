@@ -87,17 +87,14 @@ def _map_to_50_30_20(financial_summary: dict) -> dict:
         elif 'saving' in category_type:
             actual_savings += amount
         else:
-            name = item.get('name', '').lower()
-            if any(keyword in name for keyword in ['rent', 'mortgage', 'utility', 'bill', 'grocery', 'insurance', 'loan', 'debt', 'payment']):
-                actual_essential += amount
-            elif any(keyword in name for keyword in ['netflix', 'spotify', 'dining', 'entertainment', 'shopping', 'hobby', 'travel']):
-                actual_discretionary += amount
-            else:
-                actual_discretionary += amount
+            # If truly uncategorized, default to discretionary
+            actual_discretionary += amount
 
     for item in financial_summary.get("debts", []):
         monthly = float(item.get('monthlyPayment') or 0)
-        actual_essential += monthly
+        # Moving debt payments to Savings/Debt bucket (Standard 50/30/20)
+        # This is moved here to ENSURE it is not in actual_essential
+        actual_savings += monthly
 
     actual_savings += sum(float(s.get('monthlyTarget') or 0) for s in financial_summary.get('saving_goals', []))
 
