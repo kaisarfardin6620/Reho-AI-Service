@@ -583,7 +583,7 @@ Final line (copy verbatim):
 "Our inflation rate assumption comes from worldbank.org"
 
 Format your response as a simple JSON object:
-{{"tip": "The complete structured tip as described above, with £ for all amounts."}}
+{{"tip": "The complete structured tip as described above, with \\n\\n between each section and \\n before each bullet point."}}
 
 **STRICT RULES:**
 - Copy all pre-calculated figures and required sentences EXACTLY as shown. Do not round or change them.
