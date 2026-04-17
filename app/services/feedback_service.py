@@ -69,8 +69,23 @@ async def _get_report_from_ai_and_save(
         return False
 
 
+def _calculate_weighted_savings_progress(saving_goals: list) -> float:
+    if not saving_goals:
+        return 0.0
+    
+    total_goal_amount = sum(float(sg.get("totalAmount") or 0) for sg in saving_goals)
+    if total_goal_amount == 0:
+        return 0.0
+        
+    weighted_sum = sum(
+        float(sg.get("completionRatio") or 0) * float(sg.get("totalAmount") or 0)
+        for sg in saving_goals
+    )
+    return weighted_sum / total_goal_amount
+
 def _map_to_50_30_20(financial_summary: dict) -> dict:
     total_income = sum(float(i.get("amount") or 0) for i in financial_summary.get("incomes", []))
+    total_expenses = sum(float(e.get("amount") or 0) for e in financial_summary.get("expenses", []))
 
     actual_essential = 0.0
     actual_discretionary = 0.0
@@ -87,25 +102,32 @@ def _map_to_50_30_20(financial_summary: dict) -> dict:
         elif 'saving' in category_type:
             actual_savings += amount
         else:
-            # If truly uncategorized, default to discretionary
-            actual_discretionary += amount
+            name = item.get('name', '').lower()
+            if any(keyword in name for keyword in ['rent', 'mortgage', 'utility', 'bill', 'grocery', 'insurance', 'loan', 'debt', 'payment']):
+                actual_essential += amount
+            elif any(keyword in name for keyword in ['netflix', 'spotify', 'dining', 'entertainment', 'shopping', 'hobby', 'travel']):
+                actual_discretionary += amount
+            else:
+                actual_discretionary += amount
 
     for item in financial_summary.get("debts", []):
         monthly = float(item.get('monthlyPayment') or 0)
-        # Moving debt payments to Savings/Debt bucket (Standard 50/30/20)
-        # This is moved here to ENSURE it is not in actual_essential
-        actual_savings += monthly
+        actual_essential += monthly
 
     actual_savings += sum(float(s.get('monthlyTarget') or 0) for s in financial_summary.get('saving_goals', []))
 
-    total_commitments = actual_essential + actual_discretionary + actual_savings
+    disposable_income = total_income - total_expenses
+    
+    savings_progress = _calculate_weighted_savings_progress(financial_summary.get("saving_goals", []))
 
     return {
         "total_income": total_income,
-        "total_commitments": total_commitments,
+        "total_expenses": total_expenses,
+        "disposable_income": disposable_income,
         "actual_essential": actual_essential,
         "actual_discretionary": actual_discretionary,
-        "actual_savings": actual_savings
+        "actual_savings": actual_savings,
+        "overall_savings_progress": savings_progress
     }
 
 @retry_openai(max_retries=3)

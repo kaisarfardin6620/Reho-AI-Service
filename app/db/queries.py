@@ -44,47 +44,69 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False, tim
     except Exception:
         raise ValueError(f"Invalid user_id format provided: {user_id}")
 
-    general_query = {"userId": object_id, "isDeleted": False}
+    # Get user first to check for partner link
+    user = await db.users.find_one({"_id": object_id})
+    partner_id = user.get("partnerId") if user else None
     
+    general_query = {"userId": object_id, "isDeleted": False}
     income_query = dict(general_query)
     expense_query = dict(general_query)
+    budget_query = dict(general_query)
+    
+    now = datetime.now(timezone.utc)
     
     if time_frame == 'current_month':
         now = datetime.now(timezone.utc)
         start_of_month = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+        end_of_month = datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc) if now.month < 12 else datetime(now.year + 1, 1, 1, tzinfo=timezone.utc)
 
-        income_query["$or"] = [
-            {"receiveDate": {"$gte": start_of_month}},
-            {"createdAt": {"$gte": start_of_month}},
-            {"date": {"$gte": start_of_month}}
-        ]
+        # 1. Income: Filter by receiveDate (Target: £55,000)
+        income_query["frequency"] = "monthly"
+        income_query["receiveDate"] = {"$gte": start_of_month, "$lt": end_of_month}
 
-        expense_query["$or"] = [
-            {"createdAt": {"$gte": start_of_month}},
-            {"endDate": {"$gte": start_of_month}}
-        ]
+        # 2. Expense: Restore budgetId requirement (Target: £16,100)
+        expense_query["frequency"] = "monthly"
+        expense_query["endDate"] = {"$gte": start_of_month, "$lt": end_of_month}
+        expense_query["budgetId"] = {"$exists": True, "$ne": None}
+        
+        # 3. Budget: Filter by createdAt (Target: £26,100)
+        budget_query["createdAt"] = {"$gte": start_of_month, "$lt": end_of_month}
 
-    user_task = db.users.find_one({"_id": object_id})
+    # 4. Partner Data Inclusion (Node.js rule: include partner's household budgets)
+    budget_tasks = [db.budgets.find(budget_query).to_list(length=None)]
+    if partner_id:
+        partner_budget_query = {
+            "userId": ObjectId(partner_id),
+            "isDeleted": False,
+            "type": "household",
+            "createdAt": budget_query.get("createdAt", {"$exists": True})
+        }
+        budget_tasks.append(db.budgets.find(partner_budget_query).to_list(length=None))
+
+    # 5. Saving Goal Filtering (Node.js rule: isCompleted: false and completeDate > now)
+    saving_goal_query = dict(general_query)
+    saving_goal_query["isCompleted"] = False
+    saving_goal_query["completeDate"] = {"$gt": now}
+
     income_task = db.incomes.find(income_query).to_list(length=None)
     expense_task = db.expenses.find(expense_query).to_list(length=None)
-    budget_task = db.budgets.find(general_query).to_list(length=None)
     debt_task = db.debts.find(general_query).to_list(length=None)
-    saving_goal_task = db.savinggoals.find(general_query).to_list(length=None)
+    saving_goal_task = db.savinggoals.find(saving_goal_query).to_list(length=None)
     subscription_task = db.subscriptions.find_one({"userId": object_id, "status": "active"})
 
     results = await asyncio.gather(
-        user_task, income_task, expense_task, budget_task,
+        income_task, expense_task, asyncio.gather(*budget_tasks),
         debt_task, saving_goal_task, subscription_task,
         return_exceptions=True
     )
 
-    user         = _safe_result(results[0], single=True)
-    incomes      = _safe_result(results[1])
-    expenses     = _safe_result(results[2])
-    budgets      = _safe_result(results[3])
-    debts        = _safe_result(results[4])
-    saving_goals = _safe_result(results[5])
-    subscription = _safe_result(results[6], single=True)
+    incomes      = _safe_result(results[0])
+    expenses     = _safe_result(results[1])
+    budget_results = _safe_result(results[2]) # List of lists
+    budgets      = [item for sublist in budget_results for item in sublist] if isinstance(budget_results, list) else []
+    debts        = _safe_result(results[3])
+    saving_goals = _safe_result(results[4])
+    subscription = _safe_result(results[5], single=True)
 
     budget_map = {}
     if budgets:
@@ -104,33 +126,41 @@ async def get_user_financial_summary(user_id: str, skip_cache: bool = False, tim
                 "budgetCategory": category_name
             })
 
-    formatted_debts = []
+    processed_debts = []
     if debts:
         for d in debts:
-            stored_rate = d.get("userInterestRate")
-            if stored_rate is not None:
-                rate = float(stored_rate)
+            cap = float(d.get("capitalRepayment") or 0)
+            int_rep = float(d.get("interestRepayment") or 0)
+            total_rep = cap + int_rep
+            
+            if total_rep > 0:
+                rate = (int_rep / total_rep * 100)
             else:
-                rate = calculate_implied_interest_rate(d)
-
-            formatted_debts.append({
+                rate = float(d.get("interestRate") or d.get("userInterestRate") or 0)
+            
+            processed_debts.append({
                 "name": d.get("name"),
-                "amount": d.get("amount"),
-                "monthlyPayment": d.get("monthlyPayment"),
-                "interestRate": rate
+                "amount": float(d.get("amount", 0)),
+                "monthlyPayment": float(d.get("monthlyPayment", 0)),
+                "interestRate": round(rate, 2),
+                "completionRatio": float(d.get("completionRatio", 0))
             })
+
+        processed_debts.sort(key=lambda x: x["interestRate"], reverse=True)
+        processed_debts = processed_debts[:3]
 
     summary = {
         "name": user.get("name", "there") if user else "there",
         "incomes": [{"name": i.get("name"), "amount": i.get("amount"), "frequency": i.get("frequency")} for i in incomes],
         "expenses": formatted_expenses,
         "budgets": [{"name": b.get("name"), "amount": b.get("amount"), "category": b.get("category")} for b in budgets],
-        "debts": formatted_debts,
+        "debts": processed_debts,
         "saving_goals": [{
             "name": sg.get("name"),
             "totalAmount": sg.get("totalAmount"),
             "monthlyTarget": sg.get("monthlyTarget"),
-            "savedAmount": sg.get("savedMoney", 0)
+            "savedAmount": sg.get("savedMoney", 0),
+            "completionRatio": sg.get("completionRation", 0)
         } for sg in saving_goals],
         "subscription_status": subscription.get("status", "none") if subscription else "none"
     }
