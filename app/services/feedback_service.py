@@ -91,24 +91,38 @@ def _map_to_50_30_20(financial_summary: dict) -> dict:
     actual_discretionary = 0.0
     actual_savings = 0.0
 
-    for item in financial_summary.get("expenses", []):
+    # Primary source: Use BUDGETS with category field for accurate classification
+    for item in financial_summary.get("budgets", []):
         amount = float(item.get('amount') or 0)
-        category_type = str(item.get('budgetCategory', '')).strip().lower()
+        category = str(item.get('category', '')).strip().lower()
 
-        if 'essential' in category_type or category_type == 'needs':
+        if 'essential' in category or 'needs' in category:
             actual_essential += amount
-        elif 'discretionary' in category_type or category_type == 'wants':
+        elif 'discretionary' in category or 'wants' in category:
             actual_discretionary += amount
-        elif 'saving' in category_type:
+        elif 'saving' in category:
             actual_savings += amount
-        else:
-            name = item.get('name', '').lower()
-            if any(keyword in name for keyword in ['rent', 'mortgage', 'utility', 'bill', 'grocery', 'insurance', 'loan', 'debt', 'payment']):
+
+    # Fallback: If no budgets, use expenses with budgetCategory field
+    if not financial_summary.get("budgets"):
+        for item in financial_summary.get("expenses", []):
+            amount = float(item.get('amount') or 0)
+            category_type = str(item.get('budgetCategory', '')).strip().lower()
+
+            if 'essential' in category_type or category_type == 'needs':
                 actual_essential += amount
-            elif any(keyword in name for keyword in ['netflix', 'spotify', 'dining', 'entertainment', 'shopping', 'hobby', 'travel']):
+            elif 'discretionary' in category_type or category_type == 'wants':
                 actual_discretionary += amount
+            elif 'saving' in category_type:
+                actual_savings += amount
             else:
-                actual_discretionary += amount
+                name = item.get('name', '').lower()
+                if any(keyword in name for keyword in ['rent', 'mortgage', 'utility', 'bill', 'grocery', 'insurance', 'loan', 'debt', 'payment']):
+                    actual_essential += amount
+                elif any(keyword in name for keyword in ['netflix', 'spotify', 'dining', 'entertainment', 'shopping', 'hobby', 'travel']):
+                    actual_discretionary += amount
+                else:
+                    actual_discretionary += amount
 
     for item in financial_summary.get("debts", []):
         monthly = float(item.get('monthlyPayment') or 0)
