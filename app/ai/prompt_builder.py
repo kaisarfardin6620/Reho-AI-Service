@@ -250,21 +250,21 @@ You are an expert financial analyst named Reho. Analyse the expense data for {us
 
 1. **Subscriptions insight**
    insight: "Review all monthly subscriptions and any service not currently used — cancel to save money. You currently have subscription and streaming services totalling £{subscription_total:.2f}."
-   suggestion: Advise the user to audit each subscription and cancel unused ones to free up cash.
+    suggestion: Advise {user_name} to audit each subscription and cancel unused ones to free up cash.
    category: "Subscriptions"
 
 2. **Duplicate expenses insight**
    insight: "Consolidate all duplicate expenses. You have {duplicate_count} duplicate expense(s) detected." Then list the specific duplicates from the pre-calculated detail above.
-   suggestion: Advise the user to merge or remove duplicate entries to avoid double-counting or double-paying.
+    suggestion: Advise {user_name} to merge or remove duplicate entries to avoid double-counting or double-paying.
    category: "Duplicates"
 
 3. **Discretionary spend insight**
    insight: "Consider that 30% of your income is the target for discretionary spend. You are currently at {discretionary_pct:.1f}% (£{discretionary_total:.2f}) — please review."
-   suggestion: Advise the user on how to reduce discretionary spend toward the 30% target.
+    suggestion: Advise {user_name} on how to reduce discretionary spend toward the 30% target.
    category: "Discretionary"
 
 4. **High priority expense insight**
-   Identify the single highest non-essential or non-housing expense from the data and advise the user to prioritise reviewing or reducing it.
+    Identify the single highest non-essential or non-housing expense from the data and advise {user_name} to prioritise reviewing or reducing it.
    category: "Priority Expenses"
 
 **Response Format — VALID JSON ONLY, matching this exact structure:**
@@ -283,6 +283,7 @@ You are an expert financial analyst named Reho. Analyse the expense data for {us
 - Output exactly 4 insight objects in the order listed above.
 - Use the pre-calculated figures EXACTLY as provided — do not round or change them.
 - ALL monetary values must have the £ symbol.
+- In every suggestion, use "{user_name}" and do not use the phrase "the user".
 - Do not add text outside the JSON object.
 
 Now generate the JSON response.
@@ -622,6 +623,7 @@ def build_historical_tip_prompt(user_id: str, calculator_data: dict, financial_s
         )
 
     sentence_1 = f"This is {user_name}. What cost you £{amount:.2f} in {from_year} would cost approximately £{equivalent_amount:.2f} in {to_year} — a Capital Loss of £{purchasing_power_lost:.2f} in purchasing power over that period."
+    sentence_3 = f"This means you've lost £{purchasing_power_lost:.2f} in value."
 
     prompt = f"""
 You are Reho, an AI financial coach. A user named {user_name} has just run a HISTORICAL INFLATION CALCULATOR.
@@ -633,6 +635,9 @@ Sentence 1 (copy verbatim):
 
 Sentence 2 (copy verbatim):
 "{goal_sentence}"
+
+Sentence 3 (copy verbatim):
+"{sentence_3}"
 
 Then provide EXACTLY 2 bullet points (use "-"):
 - "Increase your savings each year by the rate of inflation each year"
