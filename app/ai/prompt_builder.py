@@ -260,7 +260,7 @@ You are an expert financial analyst named Reho. Analyse the expense data for {us
 
 3. **Discretionary spend insight**
    insight: "Consider that 30% of your income is the target for discretionary spend. You are currently at {discretionary_pct:.1f}% (£{discretionary_total:.2f}) — please review."
-    suggestion: Advise {user_name} on how to reduce discretionary spend toward the 30% target.
+    suggestion: {"Advise " + user_name + " to reduce discretionary spend to reach the 30% target." if discretionary_pct > 30 else "You are already below the 30% discretionary spend target — keep up the good work!"}
    category: "Discretionary"
 
 4. **High priority expense insight**
